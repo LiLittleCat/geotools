@@ -8,7 +8,7 @@ export function map() {
 
   const map = new mapboxgl.Map({
     container: "map", // container ID
-    style: "mapbox://styles/mapbox/streets-v9", // style URL
+    style: "mapbox://styles/mapbox/streets-v11", // style URL
     projection: "globe", // Display the map as a globe
     zoom: 1, // starting zoom
     center: [30, 15], // starting position [lng, lat]

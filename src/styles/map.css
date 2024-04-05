@@ -1,10 +1,37 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 #map {
-    margin: 0;
-    padding: 0;
-    height: 100vh;
-    width: 100vw;
-    position: absolute;
-    top: 0;
-    left: 0;
-  }
-  
+  flex: 1;
+  width: 100%;
+}
+
+.header {
+  background-color: rgb(34, 34, 34);
+  display: flex;
+  align-items: center; /* Centers the items vertically */
+  justify-content: space-between; /* Spreads out the h1 and logo to opposite ends */
+  padding: 0.5rem 1rem; /* Add some padding around the header */
+  color: white;
+  font-family: "Roboto Mono", "DejaVu Sans Mono", "Consolas", monospace;
+}
+
+h1 {
+  margin: 0; /* Removes any default margin */
+}
+
+.github-logo {
+  display: flex; /* Ensures logo is centered vertically with the text */
+  align-items: center;
+}
+
+.github-logo img {
+  filter: invert(100%); /* Inverts the color of the logo */
+  width: 24px; /* Defines width */
+  height: 24px; /* Defines height */
+}
