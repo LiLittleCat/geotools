@@ -66,6 +66,22 @@ export function LayerPanel({
         {errored && <span className="meta err">error</span>}
         <button
           className="btn icon ghost"
+          title={copied ? 'Copied!' : 'Copy to clipboard'}
+          disabled={!layer.text}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!layer.text) return;
+            try {
+              navigator.clipboard.writeText(layer.text);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            } catch { /* noop */ }
+          }}
+        >
+          <Icon name={copied ? 'check' : 'copy'} />
+        </button>
+        <button
+          className={`btn icon ghost ${isLocked ? 'locked-on' : ''}`}
           title={isLocked ? 'Unlock' : 'Lock (read-only)'}
           onClick={(e) => { e.stopPropagation(); onToggleLock(layer.id); }}
         >
@@ -79,7 +95,7 @@ export function LayerPanel({
           <Icon name={!layer.visible ? 'eye-off' : 'eye'} />
         </button>
         <button
-          className="btn icon ghost"
+          className="btn icon ghost danger"
           title="Remove"
           onClick={(e) => { e.stopPropagation(); onRemove(layer.id); }}
         >
@@ -98,22 +114,6 @@ export function LayerPanel({
           spellCheck={false}
           readOnly={isLocked}
         />
-        {layer.text && (
-          <button
-            className="copy-btn"
-            title={copied ? 'Copied!' : 'Copy to clipboard'}
-            onClick={(e) => {
-              e.stopPropagation();
-              try {
-                navigator.clipboard.writeText(layer.text);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1200);
-              } catch { /* noop */ }
-            }}
-          >
-            <Icon name={copied ? 'check' : 'copy'} size={12} />
-          </button>
-        )}
       </div>
 
       <div className="panel-foot">

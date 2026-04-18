@@ -29,6 +29,26 @@ interface MakeLayerOpts {
   source?: Layer['source'];
 }
 
+/** Approximate a Leaflet circle (lng, lat, radius in meters) as a regular polygon
+ *  using spherical earth math so shape survives GeoJSON round-trips. */
+function circleToPolygon(lng: number, lat: number, radiusMeters: number, steps = 256): Geom {
+  const R = 6378137;
+  const d = radiusMeters / R;
+  const lat1 = (lat * Math.PI) / 180;
+  const lng1 = (lng * Math.PI) / 180;
+  const ring: number[][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const brng = (i / steps) * 2 * Math.PI;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2),
+    );
+    ring.push([(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI]);
+  }
+  return { type: 'Polygon', coordinates: [ring] } as unknown as Geom;
+}
+
 function makeLayer(index: number, opts: MakeLayerOpts = {}): Layer {
   const text = opts.text || '';
   return {
@@ -54,7 +74,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [autoRender, setAutoRender] = useState<boolean>(TWEAKS_DEFAULTS.autoRender);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [coord, setCoord] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
-  const [tool, setTool] = useState<'cursor' | 'point' | 'line' | 'polygon' | 'rect'>('cursor');
+  const [tool, setTool] = useState<'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'circle'>('cursor');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [crs] = useState<'WGS84' | 'UTM'>('WGS84');
@@ -302,6 +322,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       map.pm.enableDraw('Polygon', pmStyle());
     } else if (tool === 'rect') {
       map.pm.enableDraw('Rectangle', pmStyle());
+    } else if (tool === 'circle') {
+      map.pm.enableDraw('Circle', pmStyle());
     }
 
     return () => {
@@ -333,9 +355,19 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     if (!map) return;
     const onCreate = (e: any) => {
       const layer = e.layer;
-      let gj: any;
-      try { gj = layer.toGeoJSON(); } catch { return; }
-      const geom: Geom = gj.geometry || gj;
+      let geom: Geom | null = null;
+      // L.Circle is not GeoJSON-native — approximate as a 256-sided polygon so it
+      // round-trips through GeoJSON/WKT and can be vertex-edited like any polygon.
+      if (e.shape === 'Circle' || layer instanceof L.Circle) {
+        const c = layer.getLatLng();
+        const r = layer.getRadius();
+        geom = circleToPolygon(c.lng, c.lat, r, 256);
+      } else {
+        let gj: any;
+        try { gj = layer.toGeoJSON(); } catch { return; }
+        geom = gj.geometry || gj;
+      }
+      if (!geom) return;
       map.removeLayer(layer);
       addDrawnLayer(geom);
       setTool('cursor');
@@ -462,15 +494,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   return (
     <>
-      <AppShell
-        tab={tab}
-        setTab={setTab}
-        rightMeta={
-          <>
-            <span className="dot" /> <span>{renderedCount}/{layers.length} rendered</span>
-          </>
-        }
-      />
+      <AppShell tab={tab} setTab={setTab} />
 
       <div className="split">
         <aside className="side">
@@ -542,6 +566,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                     <button onClick={() => { setTool('rect'); setAddMenuOpen(false); }}>
                       <Icon name="rect" size={12} /> Draw rectangle
                     </button>
+                    <button onClick={() => { setTool('circle'); setAddMenuOpen(false); }}>
+                      <Icon name="circle" size={12} /> Draw circle
+                    </button>
                   </div>
                 )}
               </div>
@@ -589,6 +616,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               <button className={`tool-btn ${tool === 'rect' ? 'active' : ''}`} onClick={() => setTool('rect')} title="Draw rectangle">
                 <Icon name="rect" size={12} /> Rectangle
               </button>
+              <button className={`tool-btn ${tool === 'circle' ? 'active' : ''}`} onClick={() => setTool('circle')} title="Draw circle">
+                <Icon name="circle" size={12} /> Circle
+              </button>
             </div>
             <span className="tool-hint">
               {tool === 'cursor' && 'Click a geometry to edit vertices. Drag to move.'}
@@ -596,6 +626,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               {tool === 'line' && 'Click to add vertices · double-click to finish'}
               {tool === 'polygon' && 'Click to add vertices · double-click to finish'}
               {tool === 'rect' && 'Click + drag to draw a rectangle'}
+              {tool === 'circle' && 'Click center, drag to set radius'}
             </span>
           </div>
 

@@ -1,7 +1,8 @@
 export type IconName =
   | 'plus' | 'x' | 'trash' | 'eye' | 'eye-off' | 'fit' | 'lock' | 'unlock'
   | 'upload' | 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'draw'
-  | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right' | 'settings';
+  | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right' | 'settings'
+  | 'github' | 'circle';
 
 interface IconProps {
   name: IconName;
@@ -38,12 +39,14 @@ export function Icon({ name, size = 14 }: IconProps) {
     case 'copy': return <svg {...c}><rect x="5" y="5" width="8" height="9" rx="1" /><path d="M3 10V3a1 1 0 011-1h6" /></svg>;
     case 'check': return <svg {...c}><path d="M3 8l3 3 7-7" /></svg>;
     case 'sun': return <svg {...c}><circle cx="8" cy="8" r="3" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3" /></svg>;
-    case 'moon': return <svg {...c}><path d="M13 9.5A6 6 0 016.5 3a6 6 0 103 9.5 6 6 0 003.5-3z" /></svg>;
+    case 'moon': return <svg {...c}><path d="M8 2a4 4 0 006 6 6 6 0 11-6-6z" /></svg>;
     case 'auto': return <svg {...c}><circle cx="8" cy="8" r="5.5" /><path d="M8 2.5v11" /><path d="M8 2.5a5.5 5.5 0 010 11" fill="currentColor" stroke="none" /></svg>;
     case 'file': return <svg {...c}><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3" /></svg>;
     case 'globe': return <svg {...c}><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c2 2 3 4 3 6s-1 4-3 6c-2-2-3-4-3-6s1-4 3-6z" /></svg>;
     case 'arrow-right': return <svg {...c}><path d="M3 8h10M9 4l4 4-4 4" /></svg>;
     case 'settings': return <svg {...c}><circle cx="8" cy="8" r="2" /><path d="M12.5 8a4.5 4.5 0 00-.08-.83l1.4-1.1-1.4-2.4-1.66.66a4.5 4.5 0 00-1.44-.83L9 1.75H7l-.32 1.75a4.5 4.5 0 00-1.44.83L3.58 3.67l-1.4 2.4 1.4 1.1A4.5 4.5 0 003.5 8a4.5 4.5 0 00.08.83l-1.4 1.1 1.4 2.4 1.66-.66c.42.34.9.63 1.44.83L7 14.25h2l.32-1.75c.54-.2 1.02-.49 1.44-.83l1.66.66 1.4-2.4-1.4-1.1c.05-.27.08-.55.08-.83z" /></svg>;
+    case 'circle': return <svg {...c}><circle cx="8" cy="8" r="5.5" /><circle cx="8" cy="8" r="0.9" fill="currentColor" stroke="none" /></svg>;
+    case 'github': return <svg {...c} fill="currentColor" stroke="none"><path fillRule="evenodd" clipRule="evenodd" d="M8 .5C3.58.5 0 4.08 0 8.5c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.58.82-2.14-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.14 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8.004 8.004 0 0016 8.5C16 4.08 12.42.5 8 .5z" /></svg>;
     default: return null;
   }
 }

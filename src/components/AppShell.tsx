@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useContext } from 'react';
 import { Icon } from './Icon';
 import { ThemeCtx, type ThemeMode } from './ThemeCtx';
@@ -8,10 +7,11 @@ export type Tab = 'visualizer' | 'converter';
 interface AppShellProps {
   tab: Tab;
   setTab: (t: Tab) => void;
-  rightMeta?: ReactNode;
 }
 
-export function AppShell({ tab, setTab, rightMeta }: AppShellProps) {
+const REPO_URL = 'https://github.com/LiLittleCat/geotools';
+
+export function AppShell({ tab, setTab }: AppShellProps) {
   const { theme, setTheme } = useContext(ThemeCtx);
   const sub =
     tab === 'visualizer'
@@ -27,7 +27,16 @@ export function AppShell({ tab, setTab, rightMeta }: AppShellProps) {
           <span className="brand-sub">{sub}</span>
         </div>
         <div className="header-right">
-          {rightMeta && <div className="header-meta">{rightMeta}</div>}
+          <a
+            className="header-link"
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            title="View on GitHub"
+            aria-label="View on GitHub"
+          >
+            <Icon name="github" size={14} />
+          </a>
           <div className="theme-toggle" title="Theme">
             {(['light', 'dark', 'auto'] as ThemeMode[]).map((t) => (
               <button

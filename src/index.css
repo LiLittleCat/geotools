@@ -16,6 +16,7 @@
   --fg-4: #4a4d45;
   --danger: #e58271;
   --danger-bg: #2a1815;
+  --warning: #d9a85c;
   --success: #9bc48a;
   --accent: #c9ceb8;
   --tile-filter: invert(1) hue-rotate(180deg) brightness(0.85) saturate(0.55) contrast(1.05);
@@ -36,6 +37,7 @@
   --fg-4: #b4b8ac;
   --danger: #b83d27;
   --danger-bg: #fbe8e3;
+  --warning: #b17012;
   --success: #4a7d3a;
   --accent: #3a3e36;
   --tile-filter: none;
@@ -87,6 +89,13 @@ html, body {
   font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-3);
 }
 .header-meta .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 20%, transparent); }
+.header-link {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  color: var(--fg-3); text-decoration: none;
+  transition: color 120ms, background 120ms;
+}
+.header-link:hover { color: var(--fg); background: var(--bg-input); }
 .theme-toggle {
   display: flex; gap: 1px; padding: 2px; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 6px;
 }
@@ -368,6 +377,13 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
 .btn.primary:hover { background: var(--accent); border-color: var(--accent); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--fg-3); }
 .btn.ghost:hover { color: var(--fg); background: var(--bg-elev); }
+
+/* Semantic variants for icon buttons.
+   - `danger`: neutral by default, icon turns red on hover (button bg like peers).
+   - `locked-on`: icon is amber/warning-colored to signal the layer is locked. */
+.btn.ghost.danger:hover { color: var(--danger); background: var(--bg-elev); }
+.btn.ghost.locked-on { color: var(--warning); }
+.btn.ghost.locked-on:hover { color: var(--warning); background: var(--bg-elev); }
 .btn.sm { padding: 3px 7px; font-size: 11px; }
 .btn.icon { padding: 4px; width: 26px; height: 26px; justify-content: center; }
 .btn svg { width: 13px; height: 13px; }
