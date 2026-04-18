@@ -66,9 +66,10 @@ html, body {
   padding: 0 16px; height: 44px;
 }
 .header-row.tabs-row {
-  height: 38px; padding-top: 0; padding-bottom: 0;
+  height: 44px; padding-top: 0; padding-bottom: 0;
   border-top: 1px solid var(--border-soft);
   background: var(--bg-panel);
+  justify-content: center;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
 .brand-mark {
@@ -97,18 +98,28 @@ html, body {
 .theme-toggle button:hover { color: var(--fg); }
 .theme-toggle button.active { background: var(--bg-elev); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
 
-.tabs { display: flex; gap: 4px; height: 100%; align-items: stretch; }
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
 .tab {
   background: transparent; border: none; color: var(--fg-3);
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  padding: 0 16px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 500;
+  padding: 5px 18px; cursor: pointer;
   letter-spacing: -0.005em;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color 120ms, border-color 120ms;
+  border-radius: 5px;
+  transition: color 120ms, background 120ms, box-shadow 120ms;
 }
 .tab:hover { color: var(--fg); }
-.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.tab.active {
+  color: var(--fg);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
 
 /* Converter */
 .conv-split { grid-template-columns: 460px 1fr; }
@@ -459,6 +470,38 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
 }
 .map-btn:hover { color: var(--fg); border-color: var(--border-strong); }
 
+/* Joined icon-only map button group (top-right) */
+.map-btn-group {
+  position: relative;
+  display: inline-flex;
+  background: var(--overlay-bg); backdrop-filter: blur(8px);
+  border: 1px solid var(--border-soft); border-radius: 7px;
+  padding: 2px;
+  gap: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.map-btn-group .map-btn.icon {
+  background: transparent; backdrop-filter: none;
+  border: none; border-radius: 5px;
+  padding: 0; width: 28px; height: 26px;
+  justify-content: center; gap: 0;
+  color: var(--fg-3);
+  transition: color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.map-btn-group .map-btn.icon:hover {
+  color: var(--fg);
+  background: var(--bg-elev);
+}
+.map-btn-group .map-btn.icon.active {
+  color: var(--fg);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.map-btn-group .map-btn.icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--fg) 18%, transparent);
+}
+
 /* Empty state */
 .empty {
   position: absolute; inset: 0;
@@ -501,7 +544,7 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
 
 /* Tweaks */
 .tweaks {
-  position: fixed; right: 16px; bottom: 16px;
+  position: absolute; top: calc(100% + 6px); right: 0;
   width: 260px; background: var(--bg-elev);
   border: 1px solid var(--border); border-radius: 10px;
   padding: 12px; z-index: 1000;

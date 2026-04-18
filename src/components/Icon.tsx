@@ -1,7 +1,7 @@
 export type IconName =
   | 'plus' | 'x' | 'trash' | 'eye' | 'eye-off' | 'fit' | 'lock' | 'unlock'
   | 'upload' | 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'draw'
-  | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right';
+  | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right' | 'settings';
 
 interface IconProps {
   name: IconName;
@@ -43,6 +43,7 @@ export function Icon({ name, size = 14 }: IconProps) {
     case 'file': return <svg {...c}><path d="M4 2h5l3 3v9H4z" /><path d="M9 2v3h3" /></svg>;
     case 'globe': return <svg {...c}><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c2 2 3 4 3 6s-1 4-3 6c-2-2-3-4-3-6s1-4 3-6z" /></svg>;
     case 'arrow-right': return <svg {...c}><path d="M3 8h10M9 4l4 4-4 4" /></svg>;
+    case 'settings': return <svg {...c}><circle cx="8" cy="8" r="2" /><path d="M12.5 8a4.5 4.5 0 00-.08-.83l1.4-1.1-1.4-2.4-1.66.66a4.5 4.5 0 00-1.44-.83L9 1.75H7l-.32 1.75a4.5 4.5 0 00-1.44.83L3.58 3.67l-1.4 2.4 1.4 1.1A4.5 4.5 0 003.5 8a4.5 4.5 0 00.08.83l-1.4 1.1 1.4 2.4 1.66-.66c.42.34.9.63 1.44.83L7 14.25h2l.32-1.75c.54-.2 1.02-.49 1.44-.83l1.66.66 1.4-2.4-1.4-1.1c.05-.27.08-.55.08-.83z" /></svg>;
     default: return null;
   }
 }

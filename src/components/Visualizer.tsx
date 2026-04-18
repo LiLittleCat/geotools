@@ -491,9 +491,6 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 }}
               />
               <button className="btn sm ghost" onClick={clearAll}>Clear all</button>
-              <button className="btn sm ghost" onClick={() => setTweaksOpen((v) => !v)} title="Tweaks">
-                ⚙
-              </button>
               <div className="add-menu" ref={addMenuRef}>
                 <button className="btn sm primary" onClick={() => setAddMenuOpen((v) => !v)}>
                   <Icon name="plus" size={12} /> New Layer
@@ -584,9 +581,50 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
             </div>
 
             <div className="map-overlay-tr">
-              <button className="map-btn" onClick={fitAll}>
-                <Icon name="fit" size={11} /> Fit all
-              </button>
+              <div className="map-btn-group">
+                <button
+                  className={`map-btn icon ${tweaksOpen ? 'active' : ''}`}
+                  onClick={() => setTweaksOpen((v) => !v)}
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <Icon name="settings" size={12} />
+                </button>
+                <button className="map-btn icon" onClick={fitAll} title="Fit all" aria-label="Fit all">
+                  <Icon name="fit" size={12} />
+                </button>
+                {tweaksOpen && (
+                  <div className="tweaks">
+                    <h4>
+                      <span>Settings</span>
+                      <button className="btn icon ghost" onClick={() => setTweaksOpen(false)} aria-label="Close settings">
+                        <Icon name="x" size={11} />
+                      </button>
+                    </h4>
+                    <div className="tweak-row">
+                      <label>Tiles</label>
+                      <div className="opt">
+                        {(['carto-voyager', 'carto-labels', 'osm'] as TileStyleId[]).map((t) => (
+                          <button
+                            key={t}
+                            className={tileStyle === t ? 'active' : ''}
+                            onClick={() => setTileStyle(t)}
+                          >
+                            {t === 'carto-voyager' ? 'Clean' : t === 'carto-labels' ? 'Labels' : 'OSM'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="tweak-row">
+                      <label>Render</label>
+                      <div className="opt">
+                        <button className={autoRender ? 'active' : ''} onClick={() => setAutoRender(true)}>Auto</button>
+                        <button className={!autoRender ? 'active' : ''} onClick={() => setAutoRender(false)}>Manual</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="map-overlay-bl">
@@ -614,38 +652,6 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       </div>
 
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.msg}</div>}
-
-      {tweaksOpen && (
-        <div className="tweaks">
-          <h4>
-            <span>Tweaks</span>
-            <button className="btn icon ghost" onClick={() => setTweaksOpen(false)}>
-              <Icon name="x" size={11} />
-            </button>
-          </h4>
-          <div className="tweak-row">
-            <label>Tiles</label>
-            <div className="opt">
-              {(['carto-voyager', 'carto-labels', 'osm'] as TileStyleId[]).map((t) => (
-                <button
-                  key={t}
-                  className={tileStyle === t ? 'active' : ''}
-                  onClick={() => setTileStyle(t)}
-                >
-                  {t === 'carto-voyager' ? 'Clean' : t === 'carto-labels' ? 'Labels' : 'OSM'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="tweak-row">
-            <label>Render</label>
-            <div className="opt">
-              <button className={autoRender ? 'active' : ''} onClick={() => setAutoRender(true)}>Auto</button>
-              <button className={!autoRender ? 'active' : ''} onClick={() => setAutoRender(false)}>Manual</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
