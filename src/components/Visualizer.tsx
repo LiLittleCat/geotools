@@ -192,49 +192,109 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
   }, []);
 
-  /* Persist */
+  /* Persist (debounced so color-picker drags don't thrash localStorage) */
   useEffect(() => {
-    const toSave = layers.map(({ parseResult: _pr, ...rest }) => rest);
-    try {
-      localStorage.setItem('geotools.layers', JSON.stringify(toSave));
-    } catch { /* ignore */ }
+    const t = setTimeout(() => {
+      const toSave = layers.map(({ parseResult: _pr, ...rest }) => rest);
+      try {
+        localStorage.setItem('geotools.layers', JSON.stringify(toSave));
+      } catch { /* ignore */ }
+    }, 200);
+    return () => clearTimeout(t);
   }, [layers]);
+
+  /* Track last-rendered structural signature so color-only changes can skip
+     the expensive full rebuild and just restyle existing Leaflet layers. */
+  const lastRenderedRef = useRef<{
+    id: string;
+    parseResult: Layer['parseResult'];
+    visible: boolean;
+    locked: boolean;
+    name: string;
+  }[]>([]);
+
+  const applyLayerStyle = (group: L.FeatureGroup, color: string) => {
+    group.eachLayer((l: any) => {
+      try {
+        if (l instanceof L.CircleMarker) {
+          l.setStyle({ fillColor: color, color: '#ffffff' });
+        } else if (typeof l.setStyle === 'function') {
+          const t = l.feature && l.feature.geometry ? l.feature.geometry.type : '';
+          if (typeof t === 'string' && t.includes('Line')) {
+            l.setStyle({ color });
+          } else {
+            l.setStyle({ color, fillColor: color });
+          }
+        }
+      } catch { /* ignore */ }
+    });
+  };
 
   /* Render layers whenever they change */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    Object.values(layerGroupsRef.current).forEach((lg) => map.removeLayer(lg));
-    layerGroupsRef.current = {};
 
-    layers.forEach((p) => {
-      if (p.parseResult && p.parseResult.ok && p.visible !== false) {
-        const group = L.featureGroup();
-        try {
-          addGeomToGroup(group, p.parseResult.geom, p.color);
-          group.eachLayer((l: any) => {
-            l.__layerId = p.id;
-            l.__locked = !!p.locked;
-            l.on('click', (ev: L.LeafletMouseEvent) => {
-              L.DomEvent.stopPropagation(ev as any);
-              setSelectedId(p.id);
+    const prev = lastRenderedRef.current;
+    const structuralSame =
+      prev.length === layers.length &&
+      layers.every((p, i) => {
+        const q = prev[i];
+        return !!q
+          && q.id === p.id
+          && q.parseResult === p.parseResult
+          && q.visible === p.visible
+          && q.locked === p.locked
+          && q.name === p.name;
+      });
+
+    if (structuralSame) {
+      // Color-only (or no-op) update — just restyle existing groups.
+      layers.forEach((p) => {
+        const group = layerGroupsRef.current[p.id];
+        if (group) applyLayerStyle(group, p.color);
+      });
+    } else {
+      Object.values(layerGroupsRef.current).forEach((lg) => map.removeLayer(lg));
+      layerGroupsRef.current = {};
+
+      layers.forEach((p) => {
+        if (p.parseResult && p.parseResult.ok && p.visible !== false) {
+          const group = L.featureGroup();
+          try {
+            addGeomToGroup(group, p.parseResult.geom, p.color);
+            group.eachLayer((l: any) => {
+              l.__layerId = p.id;
+              l.__locked = !!p.locked;
+              l.on('click', (ev: L.LeafletMouseEvent) => {
+                L.DomEvent.stopPropagation(ev as any);
+                setSelectedId(p.id);
+              });
+              if (!p.locked) {
+                l.on('pm:edit', handlePmEdit);
+                l.on('pm:dragend', handlePmEdit);
+              }
             });
-            if (!p.locked) {
-              l.on('pm:edit', handlePmEdit);
-              l.on('pm:dragend', handlePmEdit);
-            }
-          });
-          group.bindTooltip(p.name, {
-            permanent: false,
-            direction: 'top',
-            className: 'geo-tip',
-            sticky: true,
-          });
-          group.addTo(map);
-          layerGroupsRef.current[p.id] = group;
-        } catch { /* ignore */ }
-      }
-    });
+            group.bindTooltip(p.name, {
+              permanent: false,
+              direction: 'top',
+              className: 'geo-tip',
+              sticky: true,
+            });
+            group.addTo(map);
+            layerGroupsRef.current[p.id] = group;
+          } catch { /* ignore */ }
+        }
+      });
+    }
+
+    lastRenderedRef.current = layers.map((p) => ({
+      id: p.id,
+      parseResult: p.parseResult,
+      visible: p.visible,
+      locked: p.locked,
+      name: p.name,
+    }));
   }, [layers, handlePmEdit]);
 
   /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
@@ -378,24 +438,28 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
   }, [addDrawnLayer]);
 
-  function showToast(msg: string, err?: boolean) {
+  const showToast = useCallback((msg: string, err?: boolean) => {
     setToast({ msg, err });
     setTimeout(() => setToast(null), 2200);
-  }
+  }, []);
 
-  /* Layer actions */
-  const updateText = (id: string, text: string) => {
+  /* Layer actions — wrapped in useCallback so memoized LayerPanel children
+     don't re-render on unrelated state changes (e.g. color-picker drags). */
+  const autoRenderRef = useRef(autoRender);
+  useEffect(() => { autoRenderRef.current = autoRender; }, [autoRender]);
+
+  const updateText = useCallback((id: string, text: string) => {
     setLayers((ps) => ps.map((p) => (p.id === id ? {
       ...p,
       text,
       source: null,
-      parseResult: autoRender ? parseGeometry(text) : p.parseResult,
+      parseResult: autoRenderRef.current ? parseGeometry(text) : p.parseResult,
     } : p)));
-  };
-  const manualRender = (id: string) => {
+  }, []);
+  const manualRender = useCallback((id: string) => {
     setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, parseResult: parseGeometry(p.text) } : p)));
-  };
-  const addLayer = (preset?: keyof typeof SAMPLES) => {
+  }, []);
+  const addLayer = useCallback((preset?: keyof typeof SAMPLES) => {
     setLayers((ps) => {
       const used = new Set(ps.map((l) => l.color));
       const color = PALETTE.find((c) => !used.has(c)) || PALETTE[ps.length % PALETTE.length];
@@ -408,18 +472,20 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       });
       return [...ps, newLayer];
     });
-  };
-  const removeLayer = (id: string) => setLayers((ps) => ps.filter((p) => p.id !== id));
-  const renameLayer = (id: string, name: string) =>
-    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p)));
-  const clearLayer = (id: string) =>
-    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, text: '', parseResult: null, source: null } : p)));
-  const toggleVisible = (id: string) =>
-    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, visible: !p.visible } : p)));
-  const toggleLock = (id: string) =>
-    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p)));
+  }, []);
+  const removeLayer = useCallback((id: string) => setLayers((ps) => ps.filter((p) => p.id !== id)), []);
+  const renameLayer = useCallback((id: string, name: string) =>
+    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p))), []);
+  const clearLayer = useCallback((id: string) =>
+    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, text: '', parseResult: null, source: null } : p))), []);
+  const toggleVisible = useCallback((id: string) =>
+    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, visible: !p.visible } : p))), []);
+  const toggleLock = useCallback((id: string) =>
+    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p))), []);
+  const recolorLayer = useCallback((id: string, color: string) =>
+    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, color } : p))), []);
 
-  const handleUpload = async (id: string, file: File) => {
+  const handleUpload = useCallback(async (id: string, file: File) => {
     try {
       const text = await file.text();
       const res = parseGeometry(text);
@@ -438,7 +504,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     } catch (e: any) {
       showToast(`Read error: ${e.message}`, true);
     }
-  };
+  }, [showToast]);
 
   const zoomTo = (id: string) => {
     const map = mapRef.current;
@@ -457,8 +523,14 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
   };
 
-  const clearAll = () =>
-    setLayers((ps) => ps.map((p) => (p.locked ? p : { ...p, text: '', parseResult: null, source: null })));
+  const clearAll = () => {
+    setLayers((ps) => ps.filter((p) => p.locked));
+    setSelectedId((id) => {
+      if (!id) return id;
+      const keep = layersRef.current.find((p) => p.id === id && p.locked);
+      return keep ? id : null;
+    });
+  };
 
   useEffect(() => {
     if (autoRender) {
@@ -589,6 +661,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 onToggleLock={toggleLock}
                 onUpload={handleUpload}
                 onManualRender={manualRender}
+                onRecolor={recolorLayer}
+                palette={PALETTE}
                 autoRender={autoRender}
               />
             ))}
@@ -634,7 +708,14 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
             <div id="map" ref={mapContainerRef} />
 
             <div className="map-overlay-tl">
-              <Legend layers={layers} onToggle={toggleVisible} onZoomTo={zoomTo} crsLabel={crsLabel} />
+              <Legend
+                layers={layers}
+                selectedId={selectedId}
+                onToggle={toggleVisible}
+                onZoomTo={zoomTo}
+                onSelect={(id) => { setSelectedId(id); setTool('cursor'); }}
+                crsLabel={crsLabel}
+              />
             </div>
 
             <div className="map-overlay-tr">

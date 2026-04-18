@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { geomStats, type ParseResult } from '../lib/parse';
 
@@ -17,6 +17,7 @@ interface LayerPanelProps {
   layer: Layer;
   selected: boolean;
   autoRender: boolean;
+  palette: readonly string[];
   onSelect: (id: string) => void;
   onChange: (id: string, text: string) => void;
   onRemove: (id: string) => void;
@@ -26,16 +27,50 @@ interface LayerPanelProps {
   onToggleLock: (id: string) => void;
   onUpload: (id: string, file: File) => void;
   onManualRender: (id: string) => void;
+  onRecolor: (id: string, color: string) => void;
 }
 
-export function LayerPanel({
-  layer, selected, autoRender,
+function LayerPanelInner({
+  layer, selected, autoRender, palette,
   onSelect, onChange, onRemove, onRename, onClear,
-  onToggleVisible, onToggleLock, onUpload, onManualRender,
+  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const swatchWrapRef = useRef<HTMLSpanElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /* When this panel becomes selected from outside (e.g. Legend click or map click),
+     bring the textarea into view and focus it for immediate editing. Skip if focus
+     is already somewhere inside this panel (user clicked into it themselves). */
+  useEffect(() => {
+    if (!selected) return;
+    const panel = panelRef.current;
+    const ta = textareaRef.current;
+    if (!panel || !ta) return;
+    if (panel.contains(document.activeElement)) return;
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    ta.focus({ preventScroll: true });
+  }, [selected]);
+
+  useEffect(() => {
+    if (!colorOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (swatchWrapRef.current && !swatchWrapRef.current.contains(e.target as Node)) {
+        setColorOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setColorOpen(false); };
+    document.addEventListener('click', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [colorOpen]);
 
   const pr = layer.parseResult;
   const stats = pr && pr.ok ? geomStats(pr.geom) : null;
@@ -47,12 +82,50 @@ export function LayerPanel({
 
   return (
     <div
+      ref={panelRef}
       className={`panel ${focused || selected ? 'focused' : ''} ${errored ? 'errored' : ''} ${isLocked ? 'locked' : ''}`}
       style={{ ['--_c' as any]: layer.color } as CSSProperties}
       onClick={() => onSelect(layer.id)}
     >
       <div className="panel-head">
-        <span className="swatch" />
+        <span className="swatch-wrap" ref={swatchWrapRef}>
+          <button
+            type="button"
+            className="swatch swatch-btn"
+            title={isLocked ? 'Locked' : 'Change color'}
+            disabled={isLocked}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isLocked) return;
+              setColorOpen((v) => !v);
+            }}
+            aria-label="Change layer color"
+          />
+          {colorOpen && !isLocked && (
+            <div className="swatch-pop" onClick={(e) => e.stopPropagation()}>
+              <div className="swatch-grid">
+                {palette.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`swatch-opt ${c.toLowerCase() === layer.color.toLowerCase() ? 'active' : ''}`}
+                    style={{ background: c }}
+                    title={c}
+                    onClick={() => { onRecolor(layer.id, c); setColorOpen(false); }}
+                  />
+                ))}
+              </div>
+              <label className="swatch-custom">
+                <span>Custom</span>
+                <input
+                  type="color"
+                  value={layer.color}
+                  onChange={(e) => onRecolor(layer.id, e.target.value)}
+                />
+              </label>
+            </div>
+          )}
+        </span>
         <div className="panel-name">
           <input
             value={layer.name}
@@ -105,6 +178,7 @@ export function LayerPanel({
 
       <div className="panel-body">
         <textarea
+          ref={textareaRef}
           className="geom-input"
           value={layer.text}
           onChange={(e) => onChange(layer.id, e.target.value)}
@@ -161,3 +235,5 @@ export function LayerPanel({
     </div>
   );
 }
+
+export const LayerPanel = memo(LayerPanelInner);
