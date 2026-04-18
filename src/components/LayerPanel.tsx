@@ -17,6 +17,7 @@ interface LayerPanelProps {
   layer: Layer;
   selected: boolean;
   autoRender: boolean;
+  collapsed: boolean;
   palette: readonly string[];
   onSelect: (id: string) => void;
   onChange: (id: string, text: string) => void;
@@ -28,12 +29,13 @@ interface LayerPanelProps {
   onUpload: (id: string, file: File) => void;
   onManualRender: (id: string) => void;
   onRecolor: (id: string, color: string) => void;
+  onToggleCollapsed: (id: string) => void;
 }
 
 function LayerPanelInner({
-  layer, selected, autoRender, palette,
+  layer, selected, autoRender, collapsed, palette,
   onSelect, onChange, onRemove, onRename, onClear,
-  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor,
+  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -53,8 +55,8 @@ function LayerPanelInner({
     if (!panel || !ta) return;
     if (panel.contains(document.activeElement)) return;
     panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    ta.focus({ preventScroll: true });
-  }, [selected]);
+    if (!collapsed) ta.focus({ preventScroll: true });
+  }, [selected, collapsed]);
 
   useEffect(() => {
     if (!colorOpen) return;
@@ -83,11 +85,21 @@ function LayerPanelInner({
   return (
     <div
       ref={panelRef}
-      className={`panel ${focused || selected ? 'focused' : ''} ${errored ? 'errored' : ''} ${isLocked ? 'locked' : ''}`}
+      className={`panel ${focused || selected ? 'focused' : ''} ${errored ? 'errored' : ''} ${isLocked ? 'locked' : ''} ${collapsed ? 'collapsed' : ''}`}
       style={{ ['--_c' as any]: layer.color } as CSSProperties}
       onClick={() => onSelect(layer.id)}
     >
       <div className="panel-head">
+        <button
+          type="button"
+          className="btn icon ghost panel-collapse"
+          title={collapsed ? 'Expand' : 'Collapse'}
+          aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+          aria-expanded={!collapsed}
+          onClick={(e) => { e.stopPropagation(); onToggleCollapsed(layer.id); }}
+        >
+          <Icon name="chevron" size={11} />
+        </button>
         <span className="swatch-wrap" ref={swatchWrapRef}>
           <button
             type="button"

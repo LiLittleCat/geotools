@@ -485,6 +485,20 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const recolorLayer = useCallback((id: string, color: string) =>
     setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, color } : p))), []);
 
+  const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const toggleCollapsed = useCallback((id: string) => {
+    setCollapsedIds((m) => ({ ...m, [id]: !m[id] }));
+  }, []);
+  // Auto-expand the selected layer's panel so entering edit mode always reveals its input.
+  useEffect(() => {
+    if (!selectedId) return;
+    setCollapsedIds((m) => (m[selectedId] ? { ...m, [selectedId]: false } : m));
+  }, [selectedId]);
+  const allCollapsed = layers.length > 0 && layers.every((p) => collapsedIds[p.id]);
+  const setAllCollapsed = (v: boolean) => {
+    setCollapsedIds(v ? Object.fromEntries(layers.map((p) => [p.id, true])) : {});
+  };
+
   const handleUpload = useCallback(async (id: string, file: File) => {
     try {
       const text = await file.text();
@@ -564,11 +578,47 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   }, [addMenuOpen]);
   const globalFileRef = useRef<HTMLInputElement | null>(null);
 
+  /* Sidebar resize — drag the right edge of the layers pane to widen it.
+     420px is the minimum (current design baseline); max is 60% viewport. */
+  const SIDE_MIN = 420;
+  const [sideWidth, setSideWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('geotools.sideWidth'));
+    return Number.isFinite(saved) && saved >= SIDE_MIN ? saved : SIDE_MIN;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('geotools.sideWidth', String(sideWidth)); } catch { /* ignore */ }
+  }, [sideWidth]);
+  useEffect(() => {
+    // Let Leaflet recompute its canvas whenever the pane width changes.
+    mapRef.current?.invalidateSize();
+  }, [sideWidth]);
+
+  const startSideResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sideWidth;
+    const maxW = Math.max(SIDE_MIN, Math.floor(window.innerWidth * 0.6));
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.min(maxW, Math.max(SIDE_MIN, startW + (ev.clientX - startX)));
+      setSideWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
   return (
     <>
       <AppShell tab={tab} setTab={setTab} />
 
-      <div className="split">
+      <div className="split" style={{ gridTemplateColumns: `${sideWidth}px 1fr` }}>
         <aside className="side">
           <div className="side-header">
             <div className="side-title">Layers · {layers.length}</div>
@@ -612,6 +662,14 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                   }
                 }}
               />
+              <button
+                className="btn sm ghost"
+                title={allCollapsed ? 'Expand all' : 'Collapse all'}
+                onClick={() => setAllCollapsed(!allCollapsed)}
+                disabled={layers.length === 0}
+              >
+                {allCollapsed ? 'Expand all' : 'Collapse all'}
+              </button>
               <button className="btn sm ghost" onClick={clearAll}>Clear all</button>
               <div className="add-menu" ref={addMenuRef}>
                 <button className="btn sm primary" onClick={() => setAddMenuOpen((v) => !v)}>
@@ -664,12 +722,22 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 onRecolor={recolorLayer}
                 palette={PALETTE}
                 autoRender={autoRender}
+                collapsed={!!collapsedIds[p.id]}
+                onToggleCollapsed={toggleCollapsed}
               />
             ))}
             <button className="add-panel" onClick={() => addLayer()}>
               <Icon name="plus" size={14} /> Add layer
             </button>
           </div>
+          <div
+            className="side-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize"
+            onPointerDown={startSideResize}
+            onDoubleClick={() => setSideWidth(SIDE_MIN)}
+          />
         </aside>
 
         <div className="map-wrap">
