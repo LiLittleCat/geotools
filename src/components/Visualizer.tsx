@@ -351,20 +351,24 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
           try { l.pm?.disableLayerDrag?.(); } catch { /* ignore */ }
         });
       });
-      // Enable vertex editing + whole-layer dragging only on the selected, unlocked layer.
-      // `draggable: true` on pm.enable() gives both vertex markers AND layer-drag by
-      // grabbing the interior of the shape — no separate enableLayerDrag() needed.
+      // Enable vertex editing AND whole-layer dragging only on the selected, unlocked
+      // layer. These are two independent Geoman modes: `pm.enable()` gives the vertex
+      // markers, `pm.enableLayerDrag()` lets the user grab the shape interior to move
+      // it. (The `draggable` option of `pm.enable()` only applies during draw, not edit.)
       if (selectedId) {
         const group = layerGroupsRef.current[selectedId];
         const lyr = layersRef.current.find((l) => l.id === selectedId);
         if (group && lyr && !lyr.locked) {
           group.eachLayer((l: any) => {
             l.options.pmIgnore = false;
+            // Order matters: enable layer-drag first, then vertex-edit. Calling
+            // enableLayerDrag() after pm.enable() tears down the freshly-added
+            // vertex markers in current Geoman versions, leaving drag-only.
+            try { l.pm?.enableLayerDrag?.(); } catch { /* ignore */ }
             try {
               l.pm?.enable({
                 snappable: true,
                 allowSelfIntersection: true,
-                draggable: true,
                 allowEditing: true,
               });
             } catch { /* ignore */ }
