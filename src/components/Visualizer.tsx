@@ -129,6 +129,18 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
   }, []);
 
+  /* Deselect layer when user clicks empty map background.
+     Per-layer click handlers stopPropagation, so this only fires on true background clicks. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onMapClick = () => {
+      if (tool === 'cursor') setSelectedId(null);
+    };
+    map.on('click', onMapClick);
+    return () => { map.off('click', onMapClick); };
+  }, [tool]);
+
   /* Tiles */
   useEffect(() => {
     const map = mapRef.current;
@@ -205,15 +217,12 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     });
   }, [layers, handlePmEdit]);
 
-  /* Auto-fit when geometry set changes */
-  const fitSig = layers
-    .map((p) =>
-      p.parseResult && p.parseResult.ok && p.visible !== false
-        ? p.id + ':' + JSON.stringify(p.parseResult.geom).length
-        : '',
-    )
-    .join('|');
+  /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
+     so the user sees their data on load. After that we never auto-fit — the current zoom
+     is preserved across edits, new layers, toggles, etc. Users can press "Fit all". */
+  const didInitialFit = useRef(false);
   useEffect(() => {
+    if (didInitialFit.current) return;
     const t = setTimeout(() => {
       const map = mapRef.current;
       if (!map) return;
@@ -221,10 +230,13 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       if (groups.length === 0) return;
       const all = L.featureGroup(groups);
       const b = all.getBounds();
-      if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
+      if (b.isValid()) {
+        map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
+        didInitialFit.current = true;
+      }
     }, 300);
     return () => clearTimeout(t);
-  }, [fitSig]);
+  }, [layers]);
 
   /* Tool mode (draw / edit) */
   const nextAvailableColor = useCallback(() => {
@@ -252,19 +264,33 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
 
     if (tool === 'cursor') {
-      map.pm.enableGlobalEditMode({ allowSelfIntersection: true, snappable: true });
-      Object.entries(layerGroupsRef.current).forEach(([id, group]) => {
-        const lyr = layersRef.current.find((l) => l.id === id);
+      // Disable edit/drag on all layers first — vertices only appear after selection.
+      Object.entries(layerGroupsRef.current).forEach(([, group]) => {
         group.eachLayer((l: any) => {
-          if (lyr && lyr.locked) {
-            l.pm?.disable();
-            l.options.pmIgnore = true;
-          } else {
-            l.options.pmIgnore = false;
-            l.pm?.enable({ snappable: true, allowSelfIntersection: true });
-          }
+          try { l.pm?.disable(); } catch { /* ignore */ }
+          try { l.pm?.disableLayerDrag?.(); } catch { /* ignore */ }
         });
       });
+      // Enable vertex editing + whole-layer dragging only on the selected, unlocked layer.
+      // `draggable: true` on pm.enable() gives both vertex markers AND layer-drag by
+      // grabbing the interior of the shape — no separate enableLayerDrag() needed.
+      if (selectedId) {
+        const group = layerGroupsRef.current[selectedId];
+        const lyr = layersRef.current.find((l) => l.id === selectedId);
+        if (group && lyr && !lyr.locked) {
+          group.eachLayer((l: any) => {
+            l.options.pmIgnore = false;
+            try {
+              l.pm?.enable({
+                snappable: true,
+                allowSelfIntersection: true,
+                draggable: true,
+                allowEditing: true,
+              });
+            } catch { /* ignore */ }
+          });
+        }
+      }
     } else if (tool === 'point') {
       map.pm.enableDraw('Marker', {
         ...pmStyle(),
@@ -282,7 +308,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       map.pm.disableDraw();
       map.pm.disableGlobalEditMode();
     };
-  }, [tool, layers.length, nextAvailableColor]);
+  }, [tool, selectedId, layers, nextAvailableColor]);
 
   /* Geoman create handler */
   const addDrawnLayer = useCallback((geom: Geom) => {
