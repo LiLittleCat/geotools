@@ -1,5 +1,5 @@
 export type IconName =
-  | 'plus' | 'x' | 'trash' | 'eye' | 'eye-off' | 'fit' | 'lock' | 'unlock'
+  | 'plus' | 'x' | 'trash' | 'eye' | 'eye-off' | 'fit' | 'locate' | 'lock' | 'unlock'
   | 'upload' | 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'draw'
   | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right' | 'settings'
   | 'github' | 'circle' | 'chevron';
@@ -27,6 +27,7 @@ export function Icon({ name, size = 14 }: IconProps) {
     case 'eye': return <svg {...c}><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" /><circle cx="8" cy="8" r="2" /></svg>;
     case 'eye-off': return <svg {...c}><path d="M2 2l12 12M6.7 6.7a2 2 0 002.8 2.8M4.5 4.5C2.4 5.8 1 8 1 8s2.5 5 7 5c1.3 0 2.5-.4 3.5-1M8 3c4.5 0 7 5 7 5s-.6 1.2-1.7 2.4" /></svg>;
     case 'fit': return <svg {...c}><path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3" /></svg>;
+    case 'locate': return <svg {...c}><path d="M8 14s4-3.4 4-7a4 4 0 10-8 0c0 3.6 4 7 4 7z" /><circle cx="8" cy="7" r="1.5" /></svg>;
     case 'lock': return <svg {...c}><rect x="3" y="7" width="10" height="7" rx="1" /><path d="M5 7V5a3 3 0 016 0v2" /></svg>;
     case 'unlock': return <svg {...c}><rect x="3" y="7" width="10" height="7" rx="1" /><path d="M5 7V5a3 3 0 015.9-.8" /></svg>;
     case 'upload': return <svg {...c}><path d="M8 11V3M5 6l3-3 3 3M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1" /></svg>;

@@ -394,6 +394,11 @@ textarea.geom-input {
   padding: 10px 12px; outline: none; display: block;
   tab-size: 2; caret-color: var(--_c);
 }
+textarea.geom-input.expanded {
+  max-height: none;
+  resize: none;
+  overflow-y: hidden;
+}
 textarea.geom-input::placeholder { color: var(--fg-4); }
 textarea.geom-input::-webkit-scrollbar { width: 8px; height: 8px; }
 textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -492,6 +497,12 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
   border: 1px solid var(--border) !important;
 }
 .leaflet-pm-toolbar { display: none !important; }
+.leaflet-marker-icon.leaflet-interactive:focus,
+.leaflet-image-layer.leaflet-interactive:focus,
+.leaflet-pane > svg path.leaflet-interactive:focus,
+svg.leaflet-image-layer.leaflet-interactive path:focus {
+  outline: none;
+}
 
 /* Map overlays */
 .map-overlay-tl, .map-overlay-bl, .map-overlay-tr {

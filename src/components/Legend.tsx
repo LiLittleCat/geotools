@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { Icon } from './Icon';
 import type { Layer } from './LayerPanel';
+import { activateLegendLayer } from './legend-helpers';
 
 interface LegendProps {
   layers: Layer[];
@@ -31,8 +32,7 @@ export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, crsLa
             style={{ ['--_c' as any]: p.color } as CSSProperties}
             onClick={() => {
               if (!ok) return;
-              onSelect(p.id);
-              onZoomTo(p.id);
+              activateLegendLayer(p.id, onSelect, onZoomTo);
             }}
             title={ok ? 'Click row to select & zoom' : 'Not rendered'}
           >
@@ -53,9 +53,13 @@ export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, crsLa
                 title="Zoom to layer"
                 aria-label="Zoom to layer"
                 disabled={!ok}
-                onClick={(e) => { e.stopPropagation(); if (ok) onZoomTo(p.id); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!ok) return;
+                  activateLegendLayer(p.id, onSelect, onZoomTo);
+                }}
               >
-                <Icon name="fit" size={11} />
+                <Icon name="locate" size={11} />
               </button>
               <button
                 type="button"

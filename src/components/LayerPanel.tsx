@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { geomStats, type ParseResult } from '../lib/parse';
+import { expandedTextareaHeight } from './layer-panel-helpers';
 
 export interface Layer {
   id: string;
@@ -40,6 +41,7 @@ function LayerPanelInner({
   const [focused, setFocused] = useState(false);
   const [copied, setCopied] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const swatchWrapRef = useRef<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -73,6 +75,17 @@ function LayerPanelInner({
       document.removeEventListener('keydown', onKey);
     };
   }, [colorOpen]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    if (!expanded) {
+      ta.style.height = '';
+      return;
+    }
+    ta.style.height = 'auto';
+    ta.style.height = expandedTextareaHeight(ta.scrollHeight);
+  }, [expanded, layer.text, collapsed]);
 
   const pr = layer.parseResult;
   const stats = pr && pr.ok ? geomStats(pr.geom) : null;
@@ -191,7 +204,7 @@ function LayerPanelInner({
       <div className="panel-body">
         <textarea
           ref={textareaRef}
-          className="geom-input"
+          className={`geom-input ${expanded ? 'expanded' : ''}`}
           value={layer.text}
           onChange={(e) => onChange(layer.id, e.target.value)}
           onFocus={() => { setFocused(true); onSelect(layer.id); }}
@@ -222,6 +235,17 @@ function LayerPanelInner({
               e.target.value = '';
             }}
           />
+          <button
+            className="btn sm ghost"
+            title={expanded ? 'Collapse full text' : 'Expand full text'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+          >
+            <Icon name="fit" size={11} />
+            {expanded ? 'Collapse' : 'Expand'}
+          </button>
           <button
             className="btn sm ghost"
             title="Upload file"

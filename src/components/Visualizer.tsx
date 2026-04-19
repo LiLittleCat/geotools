@@ -15,6 +15,7 @@ import {
 import { parseGeometry, stringifyGeom, type Geom, type ParseResult } from '../lib/parse';
 import { addGeomToGroup, pointIcon } from '../lib/leaflet-helpers';
 import { projectCoord, utmProjString } from '../lib/proj';
+import { buildLayerEditOptions, syncDraggedEditMarkers } from './visualizer-editing';
 
 interface VisualizerProps {
   tab: Tab;
@@ -131,6 +132,10 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     }));
   }, []);
 
+  const handlePmDrag = useCallback((ev: any) => {
+    syncDraggedEditMarkers(ev.target);
+  }, []);
+
   /* Init map */
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -144,6 +149,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     (map as any).pm?.setGlobalOptions({ snappable: true, snapDistance: 15 });
     mapRef.current = map;
     return () => {
+      layerGroupsRef.current = {};
+      lastRenderedRef.current = [];
       map.remove();
       mapRef.current = null;
     };
@@ -272,6 +279,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               });
               if (!p.locked) {
                 l.on('pm:edit', handlePmEdit);
+                l.on('pm:drag', handlePmDrag);
                 l.on('pm:dragend', handlePmEdit);
               }
             });
@@ -295,7 +303,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       locked: p.locked,
       name: p.name,
     }));
-  }, [layers, handlePmEdit]);
+  }, [layers, handlePmDrag, handlePmEdit]);
 
   /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
      so the user sees their data on load. After that we never auto-fit — the current zoom
@@ -344,34 +352,24 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
 
     if (tool === 'cursor') {
-      // Disable edit/drag on all layers first — vertices only appear after selection.
+      // Disable edit mode on all layers first — drag mode is part of the same PM config
+      // for the selected layer, so we let Geoman clean up both together.
       Object.entries(layerGroupsRef.current).forEach(([, group]) => {
         group.eachLayer((l: any) => {
           try { l.pm?.disable(); } catch { /* ignore */ }
-          try { l.pm?.disableLayerDrag?.(); } catch { /* ignore */ }
         });
       });
-      // Enable vertex editing AND whole-layer dragging only on the selected, unlocked
-      // layer. These are two independent Geoman modes: `pm.enable()` gives the vertex
-      // markers, `pm.enableLayerDrag()` lets the user grab the shape interior to move
-      // it. (The `draggable` option of `pm.enable()` only applies during draw, not edit.)
+      // Enable vertex editing and whole-layer dragging only on the selected, unlocked
+      // layer. `syncLayersOnDrag: true` keeps sibling features in the same FeatureGroup
+      // moving together, so points no longer lag behind the dragged geometry.
       if (selectedId) {
         const group = layerGroupsRef.current[selectedId];
         const lyr = layersRef.current.find((l) => l.id === selectedId);
         if (group && lyr && !lyr.locked) {
           group.eachLayer((l: any) => {
             l.options.pmIgnore = false;
-            // Order matters: enable layer-drag first, then vertex-edit. Calling
-            // enableLayerDrag() after pm.enable() tears down the freshly-added
-            // vertex markers in current Geoman versions, leaving drag-only.
             try { l.pm?.enableLayerDrag?.(); } catch { /* ignore */ }
-            try {
-              l.pm?.enable({
-                snappable: true,
-                allowSelfIntersection: true,
-                allowEditing: true,
-              });
-            } catch { /* ignore */ }
+            try { l.pm?.enable(buildLayerEditOptions()); } catch { /* ignore */ }
           });
         }
       }
