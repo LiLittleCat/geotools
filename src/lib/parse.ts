@@ -48,6 +48,35 @@ function validateGeom(geom: any): void {
   if (!Array.isArray(geom.coordinates)) throw new Error('Missing coordinates');
 }
 
+export function extractSingleFeatureName(text: string): string | null {
+  const t = (text || '').trim();
+  if (!t || (!t.startsWith('{') && !t.startsWith('['))) return null;
+  try {
+    const obj = JSON.parse(t);
+    if (obj?.type !== 'Feature') return null;
+    const name = obj?.properties?.name;
+    if (typeof name !== 'string') return null;
+    const trimmed = name.trim();
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+}
+
+export function extractSingleFeatureProperties(text: string): Record<string, unknown> | null {
+  const t = (text || '').trim();
+  if (!t || (!t.startsWith('{') && !t.startsWith('['))) return null;
+  try {
+    const obj = JSON.parse(t);
+    if (obj?.type !== 'Feature') return null;
+    const properties = obj?.properties;
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return null;
+    return { ...properties };
+  } catch {
+    return null;
+  }
+}
+
 export function parseGeometry(text: string): ParseResult {
   const t = (text || '').trim();
   if (!t) return { ok: false, empty: true };

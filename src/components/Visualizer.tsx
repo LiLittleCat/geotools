@@ -12,7 +12,13 @@ import {
   PALETTE, SAMPLES, TILE_STYLES, TWEAKS_DEFAULTS,
   type TileStyleId,
 } from '../lib/constants';
-import { parseGeometry, stringifyGeom, type Geom, type ParseResult } from '../lib/parse';
+import {
+  extractSingleFeatureName,
+  parseGeometry,
+  stringifyGeom,
+  type Geom,
+  type ParseResult,
+} from '../lib/parse';
 import { addGeomToGroup, pointIcon } from '../lib/leaflet-helpers';
 import { projectCoord, utmProjString } from '../lib/proj';
 import { buildLayerEditOptions, syncDraggedEditMarkers } from './visualizer-editing';
@@ -68,6 +74,10 @@ function makeLayer(index: number, opts: MakeLayerOpts = {}): Layer {
     source: opts.source ?? null,
     parseResult: text ? parseGeometry(text) : null,
   };
+}
+
+function nextLayerName(currentName: string, text: string) {
+  return extractSingleFeatureName(text) || currentName;
 }
 
 export function Visualizer({ tab, setTab }: VisualizerProps) {
@@ -463,13 +473,18 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const updateText = useCallback((id: string, text: string) => {
     setLayers((ps) => ps.map((p) => (p.id === id ? {
       ...p,
+      name: nextLayerName(p.name, text),
       text,
       source: null,
       parseResult: autoRenderRef.current ? parseGeometry(text) : p.parseResult,
     } : p)));
   }, []);
   const manualRender = useCallback((id: string) => {
-    setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, parseResult: parseGeometry(p.text) } : p)));
+    setLayers((ps) => ps.map((p) => (p.id === id ? {
+      ...p,
+      name: nextLayerName(p.name, p.text),
+      parseResult: parseGeometry(p.text),
+    } : p)));
   }, []);
   const addLayer = useCallback((preset?: keyof typeof SAMPLES) => {
     setLayers((ps) => {
@@ -524,7 +539,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
         text: res.format === 'GeoJSON' ? JSON.stringify(res.geom, null, 2) : text,
         parseResult: res,
         source: 'file',
-        name: p.name.startsWith('Geometry') ? file.name.replace(/\.[^.]+$/, '') : p.name,
+        name: extractSingleFeatureName(text)
+          || (p.name.startsWith('Geometry') ? file.name.replace(/\.[^.]+$/, '') : p.name),
       } : p)));
       showToast(`Loaded ${file.name}`);
     } catch (e: any) {
@@ -560,7 +576,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   useEffect(() => {
     if (autoRender) {
-      setLayers((ps) => ps.map((p) => ({ ...p, parseResult: parseGeometry(p.text) })));
+      setLayers((ps) => ps.map((p) => ({
+        ...p,
+        name: nextLayerName(p.name, p.text),
+        parseResult: parseGeometry(p.text),
+      })));
     }
   }, [autoRender]);
 
@@ -573,7 +593,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     return buildAllLayersWktExport(layers, wktExportMode);
   }, [exportFormat, layers, wktExportMode]);
   const exportHint = exportFormat === 'GeoJSON'
-    ? 'FeatureCollection export keeps layer metadata in properties.'
+    ? 'FeatureCollection export preserves single-feature properties and adds name only when missing.'
     : wktExportMode === 'collection'
       ? 'Standard WKT export uses a single GEOMETRYCOLLECTION and drops layer properties.'
       : 'Layered WKT is a readable non-standard text export and drops layer properties.';
@@ -668,7 +688,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                         ...ps,
                         {
                           id: Math.random().toString(36).slice(2, 9),
-                          name: f.name.replace(/\.[^.]+$/, ''),
+                          name: extractSingleFeatureName(text) || f.name.replace(/\.[^.]+$/, ''),
                           text: res.format === 'GeoJSON' ? JSON.stringify(res.geom, null, 2) : text,
                           color,
                           visible: true,

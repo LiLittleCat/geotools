@@ -10,10 +10,11 @@ import {
 const polygon = parseGeometry('{"type":"Polygon","coordinates":[[[-122.5,37.7],[-122.4,37.7],[-122.4,37.8],[-122.5,37.7]]]}');
 const line = parseGeometry('LINESTRING (-122.5 37.85, -122.47 37.83, -122.41 37.82)');
 
-test('buildAllLayersGeoJsonExport emits a FeatureCollection with layer metadata in properties', () => {
+test('buildAllLayersGeoJsonExport emits a FeatureCollection with only layer name in properties', () => {
   const text = buildAllLayersGeoJsonExport([
     {
       name: 'Bounds',
+      text: '',
       color: '#ffaa33',
       visible: true,
       locked: false,
@@ -22,6 +23,7 @@ test('buildAllLayersGeoJsonExport emits a FeatureCollection with layer metadata 
     },
     {
       name: 'Route',
+      text: '',
       color: '#22bbbb',
       visible: false,
       locked: true,
@@ -35,18 +37,71 @@ test('buildAllLayersGeoJsonExport emits a FeatureCollection with layer metadata 
   assert.equal(json.features.length, 2);
   assert.deepEqual(json.features[0].properties, {
     name: 'Bounds',
-    color: '#ffaa33',
-    visible: true,
-    locked: false,
-    source: 'drawn',
   });
-  assert.equal(json.features[1].properties.source, 'file');
+  assert.deepEqual(json.features[1].properties, {
+    name: 'Route',
+  });
+});
+
+test('buildAllLayersGeoJsonExport preserves single-feature properties and adds name only when missing', () => {
+  const text = buildAllLayersGeoJsonExport([
+    {
+      name: 'Bounds',
+      text: JSON.stringify({
+        type: 'Feature',
+        properties: {
+          category: 'park',
+          active: true,
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[-122.5, 37.7], [-122.4, 37.7], [-122.4, 37.8], [-122.5, 37.7]]],
+        },
+      }),
+      color: '#ffaa33',
+      visible: true,
+      locked: false,
+      source: 'file',
+      parseResult: polygon,
+    },
+    {
+      name: 'Layer name should not overwrite source name',
+      text: JSON.stringify({
+        type: 'Feature',
+        properties: {
+          name: 'Source name',
+          category: 'route',
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [[-122.5, 37.85], [-122.47, 37.83], [-122.41, 37.82]],
+        },
+      }),
+      color: '#22bbbb',
+      visible: true,
+      locked: false,
+      source: 'file',
+      parseResult: line,
+    },
+  ]);
+
+  const json = JSON.parse(text);
+  assert.deepEqual(json.features[0].properties, {
+    category: 'park',
+    active: true,
+    name: 'Bounds',
+  });
+  assert.deepEqual(json.features[1].properties, {
+    name: 'Source name',
+    category: 'route',
+  });
 });
 
 test('buildAllLayersWktExport can emit a standard GeometryCollection or layered text', () => {
   const layers = [
     {
       name: 'Bounds',
+      text: '',
       color: '#ffaa33',
       visible: true,
       locked: false,
@@ -55,6 +110,7 @@ test('buildAllLayersWktExport can emit a standard GeometryCollection or layered 
     },
     {
       name: 'Route',
+      text: '',
       color: '#22bbbb',
       visible: true,
       locked: false,
