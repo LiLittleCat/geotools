@@ -3,8 +3,8 @@ import { Icon } from './Icon';
 import { geomStats, type ParseResult } from '../lib/parse';
 import { buildLayerPanelControls } from './layer-panel-controls';
 import {
-  buildLayerFormatOptions,
-  convertLayerTextFormat,
+  buildLayerCopyOptions,
+  buildLayerCopyText,
   currentLayerFormat,
   formatVerticesLabel,
 } from './layer-panel-format';
@@ -36,7 +36,6 @@ interface LayerPanelProps {
   onToggleLock: (id: string) => void;
   onUpload: (id: string, file: File) => void;
   onManualRender: (id: string) => void;
-  onConvertFormat: (id: string, text: string) => void;
   onRecolor: (id: string, color: string) => void;
   onToggleCollapsed: (id: string) => void;
 }
@@ -44,16 +43,16 @@ interface LayerPanelProps {
 function LayerPanelInner({
   layer, selected, autoRender, collapsed, palette,
   onSelect, onChange, onRemove, onRename, onClear,
-  onToggleVisible, onToggleLock, onUpload, onManualRender, onConvertFormat, onRecolor, onToggleCollapsed,
+  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
   const [copied, setCopied] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [formatOpen, setFormatOpen] = useState(false);
+  const [copyAsOpen, setCopyAsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const swatchWrapRef = useRef<HTMLSpanElement | null>(null);
-  const formatWrapRef = useRef<HTMLSpanElement | null>(null);
+  const copyAsWrapRef = useRef<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -71,19 +70,19 @@ function LayerPanelInner({
   }, [selected, collapsed]);
 
   useEffect(() => {
-    if (!colorOpen && !formatOpen) return;
+    if (!colorOpen && !copyAsOpen) return;
     const onDoc = (e: MouseEvent) => {
       if (swatchWrapRef.current && !swatchWrapRef.current.contains(e.target as Node)) {
         setColorOpen(false);
       }
-      if (formatWrapRef.current && !formatWrapRef.current.contains(e.target as Node)) {
-        setFormatOpen(false);
+      if (copyAsWrapRef.current && !copyAsWrapRef.current.contains(e.target as Node)) {
+        setCopyAsOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setColorOpen(false);
-        setFormatOpen(false);
+        setCopyAsOpen(false);
       }
     };
     document.addEventListener('click', onDoc);
@@ -92,7 +91,7 @@ function LayerPanelInner({
       document.removeEventListener('click', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [colorOpen, formatOpen]);
+  }, [colorOpen, copyAsOpen]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -114,7 +113,7 @@ function LayerPanelInner({
   const errorMsg = fail ? fail.error || '' : '';
   const hasText = layer.text.trim().length > 0;
   const currentFormat = currentLayerFormat(pr);
-  const formatOptions = currentFormat ? buildLayerFormatOptions(currentFormat) : [];
+  const copyOptions = currentFormat ? buildLayerCopyOptions(currentFormat) : [];
   const controls = buildLayerPanelControls({
     autoRender,
     copied,
@@ -122,6 +121,14 @@ function LayerPanelInner({
     hasText,
     isLocked,
   });
+  const copyText = async (text: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch { /* noop */ }
+  };
 
   return (
     <div
@@ -188,44 +195,7 @@ function LayerPanelInner({
             spellCheck={false}
           />
         </div>
-        {currentFormat && (
-          <span className="meta-wrap" ref={formatWrapRef}>
-            <button
-              type="button"
-              className={`meta meta-format ${formatOpen ? 'open' : ''}`}
-              title={isLocked ? `${currentFormat} format` : 'Change text format'}
-              aria-label="Change text format"
-              disabled={isLocked}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isLocked) return;
-                setFormatOpen((v) => !v);
-              }}
-            >
-              {currentFormat}
-              <Icon name="chevron" size={10} />
-            </button>
-            {formatOpen && pr && pr.ok && (
-              <div className="meta-pop" onClick={(e) => e.stopPropagation()}>
-                {formatOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`meta-pop-item ${option.active ? 'active' : ''}`}
-                    onClick={() => {
-                      if (!option.active) {
-                        onConvertFormat(layer.id, convertLayerTextFormat(pr.geom, option.value));
-                      }
-                      setFormatOpen(false);
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </span>
-        )}
+        {layer.source && <span className="meta src">{layer.source}</span>}
         {errored && <span className="meta err">error</span>}
         <button
           className={`btn icon ghost ${isLocked ? 'locked-on' : ''}`}
@@ -253,43 +223,62 @@ function LayerPanelInner({
       <div className="panel-body">
         <div className="panel-input-tools">
           {controls.textareaTools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              className={`btn icon ghost panel-input-tool ${tool.id === 'clear' ? 'danger' : ''}`}
-              title={tool.title}
-              aria-label={tool.title}
-              disabled={tool.disabled}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (tool.id === 'copy') {
-                  if (!hasText) return;
-                  try {
-                    navigator.clipboard.writeText(layer.text);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1200);
-                  } catch { /* noop */ }
-                  return;
-                }
-                if (tool.id === 'clear') {
-                  if (isLocked || !hasText) return;
-                  onClear(layer.id);
-                  return;
-                }
-                setExpanded((v) => !v);
-              }}
-            >
-              <Icon
-                name={
-                  tool.id === 'copy'
-                    ? (copied ? 'check' : 'copy')
-                    : tool.id === 'clear'
-                      ? 'x'
-                      : 'fit'
-                }
-                size={11}
-              />
-            </button>
+            tool.id === 'copy' ? (
+              <span key={tool.id} className="panel-input-menu-wrap" ref={copyAsWrapRef}>
+                <button
+                  type="button"
+                  className="btn icon ghost panel-input-tool"
+                  title={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
+                  aria-label={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
+                  disabled={tool.disabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (tool.disabled) return;
+                    setCopyAsOpen((v) => !v);
+                  }}
+                >
+                  <Icon name={copied ? 'check' : 'copy'} size={11} />
+                </button>
+                {copyAsOpen && pr && pr.ok && (
+                  <div className="panel-input-menu" onClick={(e) => e.stopPropagation()}>
+                    {copyOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className="panel-input-menu-item"
+                        onClick={async () => {
+                          await copyText(buildLayerCopyText(layer.text, pr, option.value));
+                          setCopyAsOpen(false);
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                    <div className="panel-input-menu-note">WKT copies geometry only.</div>
+                  </div>
+                )}
+              </span>
+            ) : (
+              <button
+                key={tool.id}
+                type="button"
+                className={`btn icon ghost panel-input-tool ${tool.id === 'clear' ? 'danger' : ''}`}
+                title={tool.title}
+                aria-label={tool.title}
+                disabled={tool.disabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (tool.id === 'clear') {
+                    if (isLocked || !hasText) return;
+                    onClear(layer.id);
+                    return;
+                  }
+                  setExpanded((v) => !v);
+                }}
+              >
+                <Icon name={tool.id === 'clear' ? 'x' : 'fit'} size={11} />
+              </button>
+            )
           ))}
         </div>
         <textarea

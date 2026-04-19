@@ -3,7 +3,7 @@ import { stringifyGeom, type Geom, type ParseResult } from '../lib/parse.ts';
 export type LayerTextFormat = 'GeoJSON' | 'WKT';
 
 export interface LayerFormatOption {
-  label: LayerTextFormat;
+  label: string;
   value: LayerTextFormat;
   active: boolean;
 }
@@ -12,15 +12,17 @@ export function formatVerticesLabel(type: string, vertices: number) {
   return `${type} · ${vertices} Vertices`;
 }
 
-export function buildLayerFormatOptions(current: LayerTextFormat): LayerFormatOption[] {
+export function buildLayerCopyOptions(current: LayerTextFormat): LayerFormatOption[] {
   return [
-    { label: 'GeoJSON', value: 'GeoJSON', active: current === 'GeoJSON' },
-    { label: 'WKT', value: 'WKT', active: current === 'WKT' },
+    { label: 'Copy as GeoJSON', value: 'GeoJSON', active: current === 'GeoJSON' },
+    { label: 'Copy as WKT', value: 'WKT', active: current === 'WKT' },
   ];
 }
 
-export function convertLayerTextFormat(geom: Geom, format: LayerTextFormat) {
-  return stringifyGeom(geom, format);
+export function buildLayerCopyText(sourceText: string, parseResult: ParseResult | null, format: LayerTextFormat) {
+  if (!parseResult || !parseResult.ok) return '';
+  if (parseResult.format === format) return sourceText;
+  return stringifyGeom(parseResult.geom as Geom, format);
 }
 
 export function currentLayerFormat(parseResult: ParseResult | null): LayerTextFormat | null {

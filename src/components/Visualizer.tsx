@@ -16,6 +16,12 @@ import { parseGeometry, stringifyGeom, type Geom, type ParseResult } from '../li
 import { addGeomToGroup, pointIcon } from '../lib/leaflet-helpers';
 import { projectCoord, utmProjString } from '../lib/proj';
 import { buildLayerEditOptions, syncDraggedEditMarkers } from './visualizer-editing';
+import { drawnLayerName } from './visualizer-layer-naming';
+import {
+  buildAllLayersGeoJsonExport,
+  buildAllLayersWktExport,
+  type WktExportMode,
+} from './visualizer-export';
 
 interface VisualizerProps {
   tab: Tab;
@@ -78,6 +84,10 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [tool, setTool] = useState<'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'circle'>('cursor');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'GeoJSON' | 'WKT'>('GeoJSON');
+  const [wktExportMode, setWktExportMode] = useState<WktExportMode>('collection');
+  const [exportCopied, setExportCopied] = useState(false);
   const [crs] = useState<'WGS84' | 'UTM'>('WGS84');
   const [utmZone] = useState(10);
   const [utmHemi] = useState<'N' | 'S'>('N');
@@ -395,11 +405,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   }, [tool, selectedId, layers, nextAvailableColor]);
 
   /* Geoman create handler */
-  const addDrawnLayer = useCallback((geom: Geom) => {
+  const addDrawnLayer = useCallback((geom: Geom, shape?: string) => {
     const idx = layersRef.current.length;
     const used = new Set(layersRef.current.map((l) => l.color));
     const color = PALETTE.find((c) => !used.has(c)) || PALETTE[idx % PALETTE.length];
-    const name = `${geom.type} ${idx + 1}`;
+    const name = drawnLayerName(idx, geom.type, shape);
     const text = JSON.stringify(geom, null, 2);
     const newLayer: Layer = {
       id: Math.random().toString(36).slice(2, 9),
@@ -431,7 +441,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       }
       if (!geom) return;
       map.removeLayer(layer);
-      addDrawnLayer(geom);
+      addDrawnLayer(geom, e.shape);
       setTool('cursor');
     };
     (map as any).on('pm:create', onCreate);
@@ -460,14 +470,6 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   }, []);
   const manualRender = useCallback((id: string) => {
     setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, parseResult: parseGeometry(p.text) } : p)));
-  }, []);
-  const convertLayerFormat = useCallback((id: string, text: string) => {
-    setLayers((ps) => ps.map((p) => (p.id === id ? {
-      ...p,
-      text,
-      source: null,
-      parseResult: parseGeometry(text),
-    } : p)));
   }, []);
   const addLayer = useCallback((preset?: keyof typeof SAMPLES) => {
     setLayers((ps) => {
@@ -564,7 +566,17 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   /* Derived */
   const renderedCount = layers.filter((p) => p.parseResult && p.parseResult.ok).length;
+  const exportableCount = renderedCount;
   const crsLabel = crs === 'WGS84' ? 'WGS84' : `UTM ${utmZone}${utmHemi}`;
+  const exportText = useMemo(() => {
+    if (exportFormat === 'GeoJSON') return buildAllLayersGeoJsonExport(layers);
+    return buildAllLayersWktExport(layers, wktExportMode);
+  }, [exportFormat, layers, wktExportMode]);
+  const exportHint = exportFormat === 'GeoJSON'
+    ? 'FeatureCollection export keeps layer metadata in properties.'
+    : wktExportMode === 'collection'
+      ? 'Standard WKT export uses a single GEOMETRYCOLLECTION and drops layer properties.'
+      : 'Layered WKT is a readable non-standard text export and drops layer properties.';
 
   const coordDisplay = useMemo(() => {
     if (!coord) return null;
@@ -673,14 +685,20 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 }}
               />
               <button
-                className="btn sm ghost"
+                className={`btn sm ghost side-collapse-toggle ${allCollapsed ? 'collapsed' : ''}`}
                 title={allCollapsed ? 'Expand all' : 'Collapse all'}
                 onClick={() => setAllCollapsed(!allCollapsed)}
                 disabled={layers.length === 0}
               >
+                <span className="side-collapse-icon">
+                  <Icon name="chevron" size={11} />
+                </span>
                 {allCollapsed ? 'Expand all' : 'Collapse all'}
               </button>
-              <button className="btn sm ghost" onClick={clearAll}>Clear all</button>
+              <button className="btn sm ghost" onClick={clearAll}>
+                <Icon name="trash" size={11} />
+                Clear all
+              </button>
               <div className="add-menu" ref={addMenuRef}>
                 <button className="btn sm primary" onClick={() => setAddMenuOpen((v) => !v)}>
                   <Icon name="plus" size={12} /> New Layer
@@ -729,7 +747,6 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 onToggleLock={toggleLock}
                 onUpload={handleUpload}
                 onManualRender={manualRender}
-                onConvertFormat={convertLayerFormat}
                 onRecolor={recolorLayer}
                 palette={PALETTE}
                 autoRender={autoRender}
@@ -755,22 +772,28 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
           <div className="map-toolbar">
             <div className="tool-group">
               <button className={`tool-btn ${tool === 'cursor' ? 'active' : ''}`} onClick={() => setTool('cursor')} title="Cursor (select/edit)">
-                <Icon name="cursor" size={12} /> Cursor
+                <Icon name="cursor" size={12} />
+                <span className="tool-btn-label">Cursor</span>
               </button>
               <button className={`tool-btn ${tool === 'point' ? 'active' : ''}`} onClick={() => setTool('point')} title="Draw point">
-                <Icon name="point" size={12} /> Point
+                <Icon name="point" size={12} />
+                <span className="tool-btn-label">Point</span>
               </button>
               <button className={`tool-btn ${tool === 'line' ? 'active' : ''}`} onClick={() => setTool('line')} title="Draw line">
-                <Icon name="line" size={12} /> Line
+                <Icon name="line" size={12} />
+                <span className="tool-btn-label">Line</span>
               </button>
               <button className={`tool-btn ${tool === 'polygon' ? 'active' : ''}`} onClick={() => setTool('polygon')} title="Draw polygon">
-                <Icon name="polygon" size={12} /> Polygon
+                <Icon name="polygon" size={12} />
+                <span className="tool-btn-label">Polygon</span>
               </button>
               <button className={`tool-btn ${tool === 'rect' ? 'active' : ''}`} onClick={() => setTool('rect')} title="Draw rectangle">
-                <Icon name="rect" size={12} /> Rectangle
+                <Icon name="rect" size={12} />
+                <span className="tool-btn-label">Rectangle</span>
               </button>
               <button className={`tool-btn ${tool === 'circle' ? 'active' : ''}`} onClick={() => setTool('circle')} title="Draw circle">
-                <Icon name="circle" size={12} /> Circle
+                <Icon name="circle" size={12} />
+                <span className="tool-btn-label">Circle</span>
               </button>
             </div>
             <span className="tool-hint">
@@ -864,6 +887,87 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className={`export-drawer ${exportDrawerOpen ? 'open' : ''}`}>
+            <button
+              type="button"
+              className="export-drawer-handle"
+              onClick={() => setExportDrawerOpen((v) => !v)}
+              aria-expanded={exportDrawerOpen}
+            >
+              <span className="export-drawer-handle-main">
+                <Icon name="file" size={12} />
+                All Layers Export
+              </span>
+              <span className="export-drawer-handle-meta">
+                {exportableCount}/{layers.length} exportable
+              </span>
+              <span className={`export-drawer-chevron ${exportDrawerOpen ? 'open' : ''}`}>
+                <Icon name="chevron" size={11} />
+              </span>
+            </button>
+            <div className="export-drawer-body">
+              <div className="export-drawer-toolbar">
+                <div className="export-drawer-groups">
+                  <div className="drawer-opt">
+                    <button
+                      className={exportFormat === 'GeoJSON' ? 'active' : ''}
+                      onClick={() => setExportFormat('GeoJSON')}
+                    >
+                      GeoJSON
+                    </button>
+                    <button
+                      className={exportFormat === 'WKT' ? 'active' : ''}
+                      onClick={() => setExportFormat('WKT')}
+                    >
+                      WKT
+                    </button>
+                  </div>
+                  {exportFormat === 'WKT' && (
+                    <div className="drawer-opt">
+                      <button
+                        className={wktExportMode === 'collection' ? 'active' : ''}
+                        onClick={() => setWktExportMode('collection')}
+                      >
+                        Standard
+                      </button>
+                      <button
+                        className={wktExportMode === 'layered' ? 'active' : ''}
+                        onClick={() => setWktExportMode('layered')}
+                      >
+                        Layered
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="btn sm ghost"
+                  disabled={!exportText.trim()}
+                  onClick={async () => {
+                    if (!exportText.trim()) return;
+                    try {
+                      await navigator.clipboard.writeText(exportText);
+                      setExportCopied(true);
+                      setTimeout(() => setExportCopied(false), 1200);
+                      showToast(`Copied all layers as ${exportFormat}`);
+                    } catch {
+                      showToast('Copy failed', true);
+                    }
+                  }}
+                >
+                  <Icon name={exportCopied ? 'check' : 'copy'} size={11} />
+                  {exportCopied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <textarea
+                className="export-drawer-output"
+                value={exportText}
+                readOnly
+                spellCheck={false}
+              />
+              <div className="export-drawer-hint">{exportHint}</div>
+            </div>
           </div>
         </div>
       </div>

@@ -271,6 +271,15 @@ html, body {
 }
 .side-title { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; }
 .side-actions { display: flex; gap: 6px; }
+.side-collapse-icon {
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.15s ease;
+  transform: rotate(90deg);
+}
+.side-collapse-toggle.collapsed .side-collapse-icon {
+  transform: rotate(0deg);
+}
 .side-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -422,6 +431,12 @@ html, body {
   background: var(--bg-input);
   color: var(--fg);
 }
+.meta-pop-note {
+  padding: 6px 8px 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--fg-4);
+}
 
 .panel-body { position: relative; }
 .panel-input-tools {
@@ -450,6 +465,47 @@ html, body {
   border-color: var(--border-soft);
   backdrop-filter: blur(4px);
   pointer-events: auto;
+}
+.panel-input-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  pointer-events: auto;
+}
+.panel-input-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.panel-input-menu-item {
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.panel-input-menu-item:hover {
+  background: var(--bg-input);
+  color: var(--fg);
+}
+.panel-input-menu-note {
+  padding: 6px 8px 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--fg-4);
 }
 textarea.geom-input {
   width: 100%; min-height: 104px; max-height: 260px;
@@ -548,14 +604,38 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
 .tool-group { display: flex; gap: 2px; padding: 2px; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 6px; }
 .tool-btn {
   background: transparent; border: none; color: var(--fg-2);
-  padding: 5px 9px; border-radius: 4px; cursor: pointer;
+  padding: 5px 8px; border-radius: 4px; cursor: pointer;
   font-family: inherit; font-size: 11.5px; font-weight: 500;
-  display: inline-flex; align-items: center; gap: 5px;
-  transition: all .1s ease;
+  display: inline-flex; align-items: center;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: background .12s ease, color .12s ease;
 }
 .tool-btn:hover { background: var(--bg-elev); color: var(--fg); }
 .tool-btn.active { background: var(--fg); color: var(--bg-0); }
 .tool-btn svg { width: 13px; height: 13px; }
+.tool-btn-label {
+  display: inline-block;
+  max-width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(-4px);
+  transition:
+    max-width .18s ease,
+    margin-left .18s ease,
+    opacity .12s ease,
+    transform .18s ease;
+}
+.tool-btn:hover .tool-btn-label,
+.tool-btn:focus-visible .tool-btn-label,
+.tool-btn.active .tool-btn-label {
+  max-width: 88px;
+  margin-left: 5px;
+  opacity: 1;
+  transform: translateX(0);
+}
 .tool-sep { width: 1px; height: 18px; background: var(--border-soft); margin: 0 4px; }
 .tool-hint {
   margin-left: auto;
@@ -564,6 +644,115 @@ textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border
 }
 .map-inner { position: relative; flex: 1; min-height: 0; }
 #map { position: absolute; inset: 0; background: var(--map-bg); }
+
+.export-drawer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+}
+.export-drawer-handle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.export-drawer-handle:hover {
+  background: var(--bg-input);
+  color: var(--fg);
+}
+.export-drawer-handle-main,
+.export-drawer-handle-meta,
+.export-drawer-chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-drawer-handle-main {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.export-drawer-handle-meta {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--fg-4);
+}
+.export-drawer-chevron {
+  color: var(--fg-3);
+  transition: transform 0.16s ease;
+}
+.export-drawer-chevron.open {
+  transform: rotate(90deg);
+}
+.export-drawer-body {
+  display: none;
+  padding: 0 14px 14px;
+  gap: 10px;
+}
+.export-drawer.open .export-drawer-body {
+  display: flex;
+  flex-direction: column;
+}
+.export-drawer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.export-drawer-groups {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.drawer-opt {
+  display: inline-flex;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-input);
+}
+.drawer-opt button {
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.drawer-opt button:hover {
+  color: var(--fg);
+}
+.drawer-opt button.active {
+  background: var(--fg);
+  color: var(--bg-0);
+}
+.export-drawer-output {
+  width: 100%;
+  min-height: 220px;
+  max-height: 320px;
+  resize: vertical;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--fg);
+  padding: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.export-drawer-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--fg-3);
+}
 
 .leaflet-container { background: var(--map-bg); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; }
 .leaflet-tile-pane { filter: var(--tile-filter); }

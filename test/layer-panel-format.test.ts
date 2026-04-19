@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { parseGeometry } from '../src/lib/parse.ts';
 import {
-  buildLayerFormatOptions,
-  convertLayerTextFormat,
+  buildLayerCopyOptions,
+  buildLayerCopyText,
   formatVerticesLabel,
 } from '../src/components/layer-panel-format.ts';
 
@@ -12,14 +12,33 @@ test('formatVerticesLabel uses Vertices and omits the source format', () => {
   assert.equal(formatVerticesLabel('Polygon', 5), 'Polygon · 5 Vertices');
 });
 
-test('buildLayerFormatOptions exposes the two supported text formats', () => {
-  assert.deepEqual(buildLayerFormatOptions('GeoJSON'), [
-    { label: 'GeoJSON', value: 'GeoJSON', active: true },
-    { label: 'WKT', value: 'WKT', active: false },
+test('buildLayerCopyOptions exposes the two supported copy formats', () => {
+  assert.deepEqual(buildLayerCopyOptions('GeoJSON'), [
+    { label: 'Copy as GeoJSON', value: 'GeoJSON', active: true },
+    { label: 'Copy as WKT', value: 'WKT', active: false },
   ]);
 });
 
-test('convertLayerTextFormat rewrites geometry text as WKT without changing coordinates', () => {
+test('buildLayerCopyText preserves original GeoJSON source text when copying in the same format', () => {
+  const source = `{
+  "type": "Feature",
+  "properties": {
+    "name": "Preserve me"
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [-122.4, 37.78]
+  }
+}`;
+
+  const parsed = parseGeometry(source);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(buildLayerCopyText(source, parsed, 'GeoJSON'), source);
+});
+
+test('buildLayerCopyText rewrites geometry text as WKT without changing coordinates', () => {
   const source = `{
   "type": "Polygon",
   "coordinates": [
@@ -37,7 +56,7 @@ test('convertLayerTextFormat rewrites geometry text as WKT without changing coor
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
 
-  const converted = convertLayerTextFormat(parsed.geom, 'WKT');
+  const converted = buildLayerCopyText(source, parsed, 'WKT');
   assert.match(converted, /^POLYGON/);
 
   const reparsed = parseGeometry(converted);
