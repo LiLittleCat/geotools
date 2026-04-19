@@ -20,6 +20,11 @@ import {
   resolveCrs,
 } from '../lib/proj';
 import { addGeomToGroup } from '../lib/leaflet-helpers';
+import {
+  buildConverterCopyOptions,
+  buildConverterCopyText,
+  resolveConverterOutputFormat,
+} from './converter-format';
 
 interface ConverterShellProps {
   tab: Tab;
@@ -50,16 +55,20 @@ function Converter() {
     [-122.515, 37.708]
   ]]
 }`);
-  const [outFormat, setOutFormat] = useState<'GeoJSON' | 'WKT'>('WKT');
   const [fromCrs, setFromCrs] = useState('EPSG:4326');
   const [toCrs, setToCrs] = useState('EPSG:32650');
   const [originX, setOriginX] = useState<number | string>(0);
   const [originY, setOriginY] = useState<number | string>(0);
   const [applyOrigin, setApplyOrigin] = useState<ApplyOrigin>('none');
   const [copied, setCopied] = useState(false);
+  const [copyAsOpen, setCopyAsOpen] = useState(false);
+  const copyAsWrapRef = useRef<HTMLSpanElement | null>(null);
 
   const parsed = useMemo(() => parseGeometry(input), [input]);
   const utmInvolved = useMemo(() => isUtmCrs(fromCrs) || isUtmCrs(toCrs), [fromCrs, toCrs]);
+  const inputStats = parsed.ok ? geomStats(parsed.geom) : null;
+  const outputFormat = resolveConverterOutputFormat(mode, parsed);
+  const copyOptions = buildConverterCopyOptions(outputFormat);
 
   const result = useMemo(() => {
     if (!parsed.ok) return { ok: false as const, error: parsed.error || 'Empty input' };
@@ -91,12 +100,20 @@ function Converter() {
         });
       }
 
-      const text = outFormat === 'WKT' ? stringifyGeom(geom, 'WKT') : JSON.stringify(geom, null, 2);
+      const format = resolveConverterOutputFormat(mode, parsed) || 'GeoJSON';
+      const text = format === 'WKT' ? stringifyGeom(geom, 'WKT') : JSON.stringify(geom, null, 2);
       return { ok: true as const, text, geom };
     } catch (e: any) {
       return { ok: false as const, error: e.message as string };
     }
-  }, [parsed, mode, fromCrs, toCrs, originX, originY, outFormat, applyOrigin]);
+  }, [parsed, mode, fromCrs, toCrs, originX, originY, applyOrigin]);
+  const outputStats = result.ok ? geomStats(result.geom) : null;
+  const sourceLabel = mode === 'format'
+    ? (parsed.ok ? parsed.format : 'Auto-detect')
+    : `${crsShort(fromCrs)} · ${parsed.ok ? parsed.format : 'Auto-detect'}`;
+  const targetLabel = mode === 'format'
+    ? (outputFormat || 'Output')
+    : `${crsShort(toCrs)} · ${outputFormat || 'Output'}`;
 
   const swap = () => {
     setFromCrs(toCrs);
@@ -127,6 +144,24 @@ function Converter() {
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!copyAsOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (copyAsWrapRef.current && !copyAsWrapRef.current.contains(e.target as Node)) {
+        setCopyAsOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCopyAsOpen(false);
+    };
+    document.addEventListener('click', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [copyAsOpen]);
 
   // Render the INPUT geometry on map (always in WGS84).
   useEffect(() => {
@@ -167,37 +202,40 @@ function Converter() {
   }, [parsed, mode, fromCrs, originX, originY, applyOrigin]);
 
   return (
-    <div className="split conv-split">
-      <aside className="side">
-        <div className="conv-mode-bar">
-          <div className="conv-mode-label">Conversion mode</div>
-          <div className="conv-mode-picker">
-            <button
-              className={`conv-mode-btn ${mode === 'format' ? 'active' : ''}`}
-              onClick={() => setMode('format')}
-            >
-              <div className="conv-mode-title"><Icon name="file" size={12} /> Format</div>
-              <div className="conv-mode-desc">GeoJSON ↔ WKT</div>
-            </button>
-            <button
-              className={`conv-mode-btn ${mode === 'crs' ? 'active' : ''}`}
-              onClick={() => setMode('crs')}
-            >
-              <div className="conv-mode-title"><Icon name="globe" size={12} /> CRS</div>
-              <div className="conv-mode-desc">Reproject coordinates</div>
-            </button>
+    <div className="converter-shell">
+      <section className="converter-topbar">
+        <div className="converter-rail">
+          <div className="converter-rail-group">
+            <div className="converter-rail-label">Mode</div>
+            <div className="conv-mode-picker">
+              <button
+                type="button"
+                className={`conv-mode-btn ${mode === 'format' ? 'active' : ''}`}
+                onClick={() => setMode('format')}
+              >
+                <div className="conv-mode-title"><Icon name="file" size={12} /> Format</div>
+                <div className="conv-mode-desc">GeoJSON ↔ WKT</div>
+              </button>
+              <button
+                type="button"
+                className={`conv-mode-btn ${mode === 'crs' ? 'active' : ''}`}
+                onClick={() => setMode('crs')}
+              >
+                <div className="conv-mode-title"><Icon name="globe" size={12} /> CRS</div>
+                <div className="conv-mode-desc">Reproject coordinates</div>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="conv-side-body">
-          <div className="conv-field">
-            <div className="conv-field-head">
-              <label>Input{mode === 'crs' ? ' · Source CRS' : ''}</label>
-              {mode === 'crs' && (
+          <div className="converter-rail-group converter-rail-core">
+            <div className="converter-rail-label">{mode === 'crs' ? 'Coordinate flow' : 'Conversion rule'}</div>
+            {mode === 'crs' ? (
+              <div className="converter-crs-flow">
                 <select
-                  className="crs-select sm"
+                  className="crs-select block"
                   value={fromCrs}
                   onChange={(e) => setFromCrs(e.target.value)}
+                  aria-label="Source CRS"
                 >
                   <optgroup label="Common">
                     {CRS_PRESETS.map((p) => (
@@ -210,84 +248,72 @@ function Converter() {
                     ))}
                   </optgroup>
                 </select>
-              )}
-            </div>
-            <textarea
-              className="geom-input"
-              style={{
-                width: '100%',
-                minHeight: 180,
-                borderRadius: 6,
-                border: '1px solid var(--border-soft)',
-                background: 'var(--bg-input)',
-              }}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Paste GeoJSON or WKT…"
-              spellCheck={false}
-            />
-            <div className="conv-parse-status">
-              {parsed.ok ? (
-                <span style={{ color: 'var(--success)' }}>
-                  {parsed.format} · {parsed.geom.type} · {geomStats(parsed.geom)?.vertices ?? 0} pts
-                </span>
-              ) : (
-                <span style={{ color: 'var(--danger)' }}>⚠ {parsed.error || 'empty'}</span>
-              )}
-            </div>
+                <button
+                  type="button"
+                  className="converter-swap"
+                  onClick={swap}
+                  title="Swap source and target CRS"
+                  aria-label="Swap source and target CRS"
+                >
+                  <Icon name="arrow-right" size={12} />
+                </button>
+                <select
+                  className="crs-select block"
+                  value={toCrs}
+                  onChange={(e) => setToCrs(e.target.value)}
+                  aria-label="Target CRS"
+                >
+                  <optgroup label="Common">
+                    {CRS_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>{p.id} — {p.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="UTM Zones">
+                    {CRS_PRESETS_UTM_NS.map((p) => (
+                      <option key={p.id} value={p.proj}>{p.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            ) : (
+              <div className="converter-rail-note">
+                Rewrites geometry text only. Coordinates stay unchanged.
+              </div>
+            )}
           </div>
 
-          {mode === 'crs' && (
-            <div className="conv-field">
-              <div className="conv-field-head">
-                <label>Target CRS</label>
-                <button
-                  className="btn sm ghost"
-                  onClick={swap}
-                  title="Swap from/to"
-                  style={{ padding: '2px 8px', fontSize: 11 }}
-                >
-                  ⇄ Swap
-                </button>
-              </div>
-              <select
-                className="crs-select block"
-                value={toCrs}
-                onChange={(e) => setToCrs(e.target.value)}
-              >
-                <optgroup label="Common">
-                  {CRS_PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.id} — {p.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="UTM Zones">
-                  {CRS_PRESETS_UTM_NS.map((p) => (
-                    <option key={p.id} value={p.proj}>{p.label}</option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
-          )}
+        </div>
+      </section>
 
-          {mode === 'crs' && utmInvolved && (
-            <div className="conv-field">
-              <div className="conv-field-head">
-                <label>Origin offset</label>
-                <span className="conv-badge">UTM</span>
-              </div>
+      {mode === 'crs' && utmInvolved && (
+        <section className="converter-offset-card">
+          <div className="converter-offset-head">
+            <div>
+              <div className="converter-rail-label">Origin Offset</div>
+              <div className="converter-offset-title">Apply a local origin before or after reprojection.</div>
+            </div>
+            <span className="conv-badge">UTM</span>
+          </div>
+
+          <div className="converter-offset-grid">
+            <div className="converter-offset-mode">
+              <div className="converter-inline-label">Mode</div>
               <div className="conv-row">
-                <label>Mode</label>
                 <div className="opt">
-                  <button className={applyOrigin === 'none' ? 'active' : ''} onClick={() => setApplyOrigin('none')}>None</button>
-                  <button className={applyOrigin === 'after' ? 'active' : ''} onClick={() => setApplyOrigin('after')}>Subtract after</button>
-                  <button className={applyOrigin === 'before' ? 'active' : ''} onClick={() => setApplyOrigin('before')}>Add before</button>
+                  <button type="button" className={applyOrigin === 'none' ? 'active' : ''} onClick={() => setApplyOrigin('none')}>None</button>
+                  <button type="button" className={applyOrigin === 'after' ? 'active' : ''} onClick={() => setApplyOrigin('after')}>Subtract after</button>
+                  <button type="button" className={applyOrigin === 'before' ? 'active' : ''} onClick={() => setApplyOrigin('before')}>Add before</button>
                 </div>
               </div>
-              {applyOrigin !== 'none' && (
-                <>
+            </div>
+
+            {applyOrigin !== 'none' && (
+              <>
+                <div className="converter-offset-inputs">
                   <div className="conv-row">
-                    <label>originX</label>
+                    <label htmlFor="originX">originX</label>
                     <input
+                      id="originX"
                       type="number"
                       value={originX}
                       onChange={(e) => setOriginX(e.target.value)}
@@ -295,88 +321,136 @@ function Converter() {
                     />
                   </div>
                   <div className="conv-row">
-                    <label>originY</label>
+                    <label htmlFor="originY">originY</label>
                     <input
+                      id="originY"
                       type="number"
                       value={originY}
                       onChange={(e) => setOriginY(e.target.value)}
                       step="0.0001"
                     />
                   </div>
-                  <div className="conv-hint">
-                    {applyOrigin === 'after'
-                      ? 'output = projected − origin (local coords)'
-                      : 'input coords are offsets; absolute = input + origin'}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </aside>
+                </div>
+                <div className="conv-hint">
+                  {applyOrigin === 'after'
+                    ? 'output = projected − origin, useful when the target needs local coordinates.'
+                    : 'input is treated as local offsets first, then converted against the absolute origin.'}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
-      <div className="conv-main">
-        <div className="conv-output-bar">
-          <div className="conv-output-label">
-            <Icon name="arrow-right" size={12} /> <span>Output</span>
-            {mode === 'crs' && <span className="conv-crs-pill">{crsShort(toCrs)}</span>}
-          </div>
-          <div className="conv-output-format">
-            <span className="conv-format-label">Format</span>
-            <div className="seg">
-              <button
-                className={outFormat === 'GeoJSON' ? 'active' : ''}
-                onClick={() => setOutFormat('GeoJSON')}
-              >
-                GeoJSON
-              </button>
-              <button
-                className={outFormat === 'WKT' ? 'active' : ''}
-                onClick={() => setOutFormat('WKT')}
-              >
-                WKT
-              </button>
+      <div className="converter-workspace">
+        <section className="converter-panel">
+          <div className="converter-panel-head">
+            <div>
+              <div className="converter-panel-title">Input Geometry</div>
+              <div className="converter-panel-meta">
+                <span className="conv-crs-pill">{sourceLabel}</span>
+                {parsed.ok ? (
+                  <span className="converter-status ok">
+                    {parsed.geom.type} · {inputStats?.vertices ?? 0} vertices
+                  </span>
+                ) : (
+                  <span className="converter-status error">{parsed.error || 'Awaiting geometry'}</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="conv-output-wrap">
-          <textarea
-            className="geom-input"
-            style={{
-              width: '100%',
-              height: '100%',
-              minHeight: 220,
-              border: 'none',
-              background: 'var(--bg-input)',
-            }}
-            value={result.ok ? result.text : `// Error: ${result.error}`}
-            readOnly
-            spellCheck={false}
-          />
-          {result.ok && (
-            <button
-              className="copy-btn"
-              style={{ top: 10, right: 14 }}
-              onClick={() => {
-                try {
-                  navigator.clipboard.writeText(result.text);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
-                } catch { /* ignore */ }
-              }}
-              title={copied ? 'Copied!' : 'Copy'}
-            >
-              <Icon name={copied ? 'check' : 'copy'} size={12} />
-            </button>
-          )}
-        </div>
-        <div className="conv-map-wrap">
-          <div className="conv-map-title">Preview · input reprojected to WGS84</div>
-          <div className="conv-map-inner">
-            <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+
+          <div className="converter-editor-wrap">
+            <textarea
+              className="geom-input converter-textarea"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Paste GeoJSON or WKT…"
+              spellCheck={false}
+            />
+          </div>
+        </section>
+
+        <section className="converter-panel">
+          <div className="converter-panel-head">
+            <div>
+              <div className="converter-panel-title">Output Geometry</div>
+              <div className="converter-panel-meta">
+                <span className="conv-crs-pill">{targetLabel}</span>
+                {result.ok ? (
+                  <span className="converter-status ok">
+                    {result.geom.type} · {outputStats?.vertices ?? 0} vertices
+                  </span>
+                ) : (
+                  <span className="converter-status error">{result.error}</span>
+                )}
+              </div>
+            </div>
+
+            {result.ok && (
+              <span className="panel-input-menu-wrap converter-copy-wrap" ref={copyAsWrapRef}>
+                <button
+                  type="button"
+                  className="btn icon ghost converter-copy"
+                  onClick={() => setCopyAsOpen((v) => !v)}
+                  title={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
+                  aria-label={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
+                >
+                  <Icon name={copied ? 'check' : 'copy'} size={12} />
+                </button>
+                {copyAsOpen && (
+                  <div className="panel-input-menu" onClick={(e) => e.stopPropagation()}>
+                    {copyOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`panel-input-menu-item ${option.active ? 'active' : ''}`}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(buildConverterCopyText(result.geom, option.value));
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1200);
+                          } catch { /* ignore */ }
+                          setCopyAsOpen(false);
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                    <div className="panel-input-menu-note">WKT copies geometry only.</div>
+                  </div>
+                )}
+              </span>
+            )}
+          </div>
+
+          <div className="converter-editor-wrap">
+            <textarea
+              className={`geom-input converter-textarea ${result.ok ? '' : 'is-error'}`}
+              value={result.ok ? result.text : `// Error: ${result.error}`}
+              readOnly
+              spellCheck={false}
+            />
+          </div>
+        </section>
+      </div>
+
+      <section className="converter-preview-panel">
+        <div className="converter-preview-head">
+          <div>
+            <div className="converter-panel-title">Spatial Preview</div>
+            <div className="converter-preview-meta">
+              Input geometry normalized to WGS84 for a quick footprint check.
+            </div>
+          </div>
+          <div className="converter-preview-pills">
+            <span className="conv-crs-pill">{mode === 'crs' ? `${crsShort(fromCrs)} → WGS84` : 'WGS84 preview'}</span>
           </div>
         </div>
-      </div>
+        <div className="converter-map-inner">
+          <div ref={containerRef} className="converter-map-canvas" />
+        </div>
+      </section>
     </div>
   );
 }
