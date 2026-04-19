@@ -461,6 +461,14 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const manualRender = useCallback((id: string) => {
     setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, parseResult: parseGeometry(p.text) } : p)));
   }, []);
+  const convertLayerFormat = useCallback((id: string, text: string) => {
+    setLayers((ps) => ps.map((p) => (p.id === id ? {
+      ...p,
+      text,
+      source: null,
+      parseResult: parseGeometry(text),
+    } : p)));
+  }, []);
   const addLayer = useCallback((preset?: keyof typeof SAMPLES) => {
     setLayers((ps) => {
       const used = new Set(ps.map((l) => l.color));
@@ -721,6 +729,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 onToggleLock={toggleLock}
                 onUpload={handleUpload}
                 onManualRender={manualRender}
+                onConvertFormat={convertLayerFormat}
                 onRecolor={recolorLayer}
                 palette={PALETTE}
                 autoRender={autoRender}

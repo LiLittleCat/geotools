@@ -311,7 +311,9 @@ html, body {
 
 .panel-head {
   display: flex; align-items: center; gap: 8px;
-  padding: 9px 12px; border-bottom: 1px solid var(--border-soft);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elev);
 }
 .swatch {
   width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0;
@@ -372,26 +374,90 @@ html, body {
 .meta.err { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, var(--border)); background: var(--danger-bg); }
 .meta.ok { color: var(--_c); border-color: color-mix(in oklab, var(--_c) 40%, var(--border)); }
 .meta.src { color: var(--fg-3); }
+.meta-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.meta-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.meta-format svg {
+  width: 10px;
+  height: 10px;
+  transition: transform 0.12s ease;
+}
+.meta-format.open svg { transform: rotate(90deg); }
+.meta-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.meta-pop-item {
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.meta-pop-item:hover,
+.meta-pop-item.active {
+  background: var(--bg-input);
+  color: var(--fg);
+}
 
 .panel-body { position: relative; }
-.copy-btn {
-  position: absolute; top: 6px; right: 8px;
-  background: var(--bg-elev); border: 1px solid var(--border-soft);
-  color: var(--fg-3); border-radius: 4px;
-  width: 22px; height: 22px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; opacity: 0.7; transition: all .12s ease;
+.panel-input-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.72;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
 }
-.panel-body:hover .copy-btn, .copy-btn:focus { opacity: 1; }
-.copy-btn:hover { color: var(--fg); border-color: var(--border-strong); }
-.copy-btn svg { width: 11px; height: 11px; }
+.panel:hover .panel-input-tools,
+.panel.focused .panel-input-tools,
+.panel-input-tools:focus-within {
+  opacity: 1;
+}
+.panel-input-tool {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--bg-elev) 92%, transparent);
+  border-color: var(--border-soft);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
 textarea.geom-input {
   width: 100%; min-height: 104px; max-height: 260px;
   resize: vertical; background: var(--bg-input);
   border: none; color: var(--fg);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11.5px; line-height: 1.55;
-  padding: 10px 12px; outline: none; display: block;
+  padding: 10px 96px 10px 12px; outline: none; display: block;
   tab-size: 2; caret-color: var(--_c);
 }
 textarea.geom-input.expanded {
@@ -404,19 +470,43 @@ textarea.geom-input::-webkit-scrollbar { width: 8px; height: 8px; }
 textarea.geom-input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
 .panel-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 7px 10px; border-top: 1px solid var(--border-soft);
-  background: var(--bg-0); gap: 8px; min-height: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elev);
 }
-.panel-foot-left {
-  display: flex; align-items: center; gap: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-  color: var(--fg-3); flex: 1; min-width: 0;
+.panel-foot-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--fg-3);
 }
-.panel-foot-left strong { color: var(--fg-2); font-weight: 500; }
+.panel-foot-status strong { color: var(--fg-2); font-weight: 500; }
+.panel-foot-empty { color: var(--fg-4); }
+.panel-foot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel-foot-secondary,
+.panel-foot-primary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .err-msg {
-  color: var(--danger); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  color: var(--danger);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Buttons */

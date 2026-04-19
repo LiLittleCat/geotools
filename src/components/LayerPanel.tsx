@@ -1,6 +1,13 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { geomStats, type ParseResult } from '../lib/parse';
+import { buildLayerPanelControls } from './layer-panel-controls';
+import {
+  buildLayerFormatOptions,
+  convertLayerTextFormat,
+  currentLayerFormat,
+  formatVerticesLabel,
+} from './layer-panel-format';
 import { expandedTextareaHeight } from './layer-panel-helpers';
 
 export interface Layer {
@@ -29,6 +36,7 @@ interface LayerPanelProps {
   onToggleLock: (id: string) => void;
   onUpload: (id: string, file: File) => void;
   onManualRender: (id: string) => void;
+  onConvertFormat: (id: string, text: string) => void;
   onRecolor: (id: string, color: string) => void;
   onToggleCollapsed: (id: string) => void;
 }
@@ -36,14 +44,16 @@ interface LayerPanelProps {
 function LayerPanelInner({
   layer, selected, autoRender, collapsed, palette,
   onSelect, onChange, onRemove, onRename, onClear,
-  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed,
+  onToggleVisible, onToggleLock, onUpload, onManualRender, onConvertFormat, onRecolor, onToggleCollapsed,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
   const [copied, setCopied] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const swatchWrapRef = useRef<HTMLSpanElement | null>(null);
+  const formatWrapRef = useRef<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -61,20 +71,28 @@ function LayerPanelInner({
   }, [selected, collapsed]);
 
   useEffect(() => {
-    if (!colorOpen) return;
+    if (!colorOpen && !formatOpen) return;
     const onDoc = (e: MouseEvent) => {
       if (swatchWrapRef.current && !swatchWrapRef.current.contains(e.target as Node)) {
         setColorOpen(false);
       }
+      if (formatWrapRef.current && !formatWrapRef.current.contains(e.target as Node)) {
+        setFormatOpen(false);
+      }
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setColorOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setColorOpen(false);
+        setFormatOpen(false);
+      }
+    };
     document.addEventListener('click', onDoc);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('click', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [colorOpen]);
+  }, [colorOpen, formatOpen]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -94,6 +112,16 @@ function LayerPanelInner({
   const errored = !!(fail && !fail.empty);
   const isEmpty = !pr || (!!fail && !!fail.empty);
   const errorMsg = fail ? fail.error || '' : '';
+  const hasText = layer.text.trim().length > 0;
+  const currentFormat = currentLayerFormat(pr);
+  const formatOptions = currentFormat ? buildLayerFormatOptions(currentFormat) : [];
+  const controls = buildLayerPanelControls({
+    autoRender,
+    copied,
+    expanded,
+    hasText,
+    isLocked,
+  });
 
   return (
     <div
@@ -160,24 +188,45 @@ function LayerPanelInner({
             spellCheck={false}
           />
         </div>
-        {layer.source && <span className="meta src">{layer.source}</span>}
+        {currentFormat && (
+          <span className="meta-wrap" ref={formatWrapRef}>
+            <button
+              type="button"
+              className={`meta meta-format ${formatOpen ? 'open' : ''}`}
+              title={isLocked ? `${currentFormat} format` : 'Change text format'}
+              aria-label="Change text format"
+              disabled={isLocked}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isLocked) return;
+                setFormatOpen((v) => !v);
+              }}
+            >
+              {currentFormat}
+              <Icon name="chevron" size={10} />
+            </button>
+            {formatOpen && pr && pr.ok && (
+              <div className="meta-pop" onClick={(e) => e.stopPropagation()}>
+                {formatOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`meta-pop-item ${option.active ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!option.active) {
+                        onConvertFormat(layer.id, convertLayerTextFormat(pr.geom, option.value));
+                      }
+                      setFormatOpen(false);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+        )}
         {errored && <span className="meta err">error</span>}
-        <button
-          className="btn icon ghost"
-          title={copied ? 'Copied!' : 'Copy to clipboard'}
-          disabled={!layer.text}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!layer.text) return;
-            try {
-              navigator.clipboard.writeText(layer.text);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            } catch { /* noop */ }
-          }}
-        >
-          <Icon name={copied ? 'check' : 'copy'} />
-        </button>
         <button
           className={`btn icon ghost ${isLocked ? 'locked-on' : ''}`}
           title={isLocked ? 'Unlock' : 'Lock (read-only)'}
@@ -202,6 +251,47 @@ function LayerPanelInner({
       </div>
 
       <div className="panel-body">
+        <div className="panel-input-tools">
+          {controls.textareaTools.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              className={`btn icon ghost panel-input-tool ${tool.id === 'clear' ? 'danger' : ''}`}
+              title={tool.title}
+              aria-label={tool.title}
+              disabled={tool.disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (tool.id === 'copy') {
+                  if (!hasText) return;
+                  try {
+                    navigator.clipboard.writeText(layer.text);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1200);
+                  } catch { /* noop */ }
+                  return;
+                }
+                if (tool.id === 'clear') {
+                  if (isLocked || !hasText) return;
+                  onClear(layer.id);
+                  return;
+                }
+                setExpanded((v) => !v);
+              }}
+            >
+              <Icon
+                name={
+                  tool.id === 'copy'
+                    ? (copied ? 'check' : 'copy')
+                    : tool.id === 'clear'
+                      ? 'x'
+                      : 'fit'
+                }
+                size={11}
+              />
+            </button>
+          ))}
+        </div>
         <textarea
           ref={textareaRef}
           className={`geom-input ${expanded ? 'expanded' : ''}`}
@@ -216,14 +306,15 @@ function LayerPanelInner({
       </div>
 
       <div className="panel-foot">
-        <div className="panel-foot-left">
+        <div className="panel-foot-status">
           {pr && pr.ok && stats && (
-            <span className="meta ok">{pr.format} · {pr.geom.type} · {stats.vertices} pts</span>
+            <span className="meta ok">{formatVerticesLabel(pr.geom.type, stats.vertices)}</span>
           )}
           {errored && <span className="err-msg" title={errorMsg}>⚠ {errorMsg}</span>}
-          {isEmpty && <span style={{ color: 'var(--fg-4)' }}>Awaiting input…</span>}
+          {isEmpty && <span className="panel-foot-empty">Awaiting input…</span>}
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div className="panel-foot-actions">
+          <div className="panel-foot-secondary">
           <input
             ref={fileRef}
             type="file"
@@ -235,37 +326,36 @@ function LayerPanelInner({
               e.target.value = '';
             }}
           />
-          <button
-            className="btn sm ghost"
-            title={expanded ? 'Collapse full text' : 'Expand full text'}
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((v) => !v);
-            }}
-          >
-            <Icon name="fit" size={11} />
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-          <button
-            className="btn sm ghost"
-            title="Upload file"
-            disabled={isLocked}
-            onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
-          >
-            <Icon name="upload" size={11} />
-          </button>
-          {!autoRender && !isLocked && (
-            <button className="btn sm" onClick={(e) => { e.stopPropagation(); onManualRender(layer.id); }}>
-              Render
-            </button>
-          )}
-          <button
-            className="btn sm ghost"
-            disabled={isLocked}
-            onClick={(e) => { e.stopPropagation(); onClear(layer.id); }}
-          >
-            Clear
-          </button>
+            {controls.footerTools
+              .filter((tool) => tool.id === 'upload')
+              .map((tool) => (
+                <button
+                  key={tool.id}
+                  className="btn sm ghost"
+                  title={tool.title}
+                  disabled={tool.disabled}
+                  onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
+                >
+                  <Icon name="upload" size={11} />
+                  Upload
+                </button>
+              ))}
+          </div>
+          <div className="panel-foot-primary">
+            {controls.footerTools
+              .filter((tool) => tool.id === 'render')
+              .map((tool) => (
+                <button
+                  key={tool.id}
+                  className="btn sm primary"
+                  title={tool.title}
+                  disabled={tool.disabled}
+                  onClick={(e) => { e.stopPropagation(); onManualRender(layer.id); }}
+                >
+                  Render
+                </button>
+              ))}
+          </div>
         </div>
       </div>
     </div>
