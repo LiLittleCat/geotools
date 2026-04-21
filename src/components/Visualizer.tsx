@@ -103,6 +103,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [utmHemi] = useState<'N' | 'S'>('N');
 
   const layersRef = useRef<Layer[]>([]);
+  const toolRef = useRef(tool);
 
   const [layers, setLayers] = useState<Layer[]>(() => {
     try {
@@ -126,6 +127,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   });
 
   useEffect(() => { layersRef.current = layers; }, [layers]);
+  useEffect(() => { toolRef.current = tool; }, [tool]);
 
   /* pm:edit handler (bound per-layer in render effect) */
   const handlePmEdit = useCallback((ev: any) => {
@@ -294,6 +296,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               l.__layerId = p.id;
               l.__locked = !!p.locked;
               l.on('click', (ev: L.LeafletMouseEvent) => {
+                if (toolRef.current !== 'cursor') return;
                 L.DomEvent.stopPropagation(ev as any);
                 setSelectedId(p.id);
               });
