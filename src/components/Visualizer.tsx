@@ -359,9 +359,13 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     const map = mapRef.current as any;
     if (!map || !map.pm) return;
 
-    map.pm.disableDraw();
-    map.pm.disableGlobalEditMode();
-    map.pm.disableGlobalDragMode();
+    const disablePmModes = () => {
+      if (map.pm.globalDrawModeEnabled?.()) map.pm.disableDraw();
+      if (map.pm.globalEditModeEnabled?.()) map.pm.disableGlobalEditMode();
+      if (map.pm.globalDragModeEnabled?.()) map.pm.disableGlobalDragMode();
+    };
+
+    disablePmModes();
 
     const pmStyle = () => {
       const nextColor = nextAvailableColor();
@@ -412,8 +416,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     }
 
     return () => {
-      map.pm.disableDraw();
-      map.pm.disableGlobalEditMode();
+      disablePmModes();
     };
   }, [tool, selectedId, layers, nextAvailableColor]);
 
