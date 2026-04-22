@@ -113,6 +113,9 @@ function LayerPanelInner({
   const errorMsg = fail ? fail.error || '' : '';
   const hasText = layer.text.trim().length > 0;
   const currentFormat = currentLayerFormat(pr);
+  const statusLabel = pr && pr.ok && stats
+    ? `${currentFormat ? `${currentFormat} · ` : ''}${formatVerticesLabel(pr.geom.type, stats.vertices)}`
+    : null;
   const copyOptions = currentFormat ? buildLayerCopyOptions(currentFormat) : [];
   const controls = buildLayerPanelControls({
     autoRender,
@@ -296,9 +299,7 @@ function LayerPanelInner({
 
       <div className="panel-foot">
         <div className="panel-foot-status">
-          {pr && pr.ok && stats && (
-            <span className="meta ok">{formatVerticesLabel(pr.geom.type, stats.vertices)}</span>
-          )}
+          {statusLabel && <span className="meta ok">{statusLabel}</span>}
           {errored && <span className="err-msg" title={errorMsg}>⚠ {errorMsg}</span>}
           {isEmpty && <span className="panel-foot-empty">Awaiting input…</span>}
         </div>

@@ -75,12 +75,12 @@ html, body {
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
 .brand-mark {
-  width: 22px; height: 22px; border: 1.5px solid var(--fg);
-  border-radius: 4px; position: relative; display: grid; place-items: center;
-}
-.brand-mark::before {
-  content: ''; position: absolute; width: 8px; height: 8px;
-  border: 1.5px solid var(--fg); border-radius: 50%; background: var(--bg-0);
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: url('/favicon.svg') center / contain no-repeat;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg) 10%, transparent);
 }
 .brand-sub { color: var(--fg-3); font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-left: 4px; font-weight: 400; }
 .header-right { display: flex; align-items: center; gap: 14px; }
@@ -1032,17 +1032,19 @@ svg.leaflet-image-layer.leaflet-interactive path:focus {
 .legend-row .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend-row .cnt { color: var(--fg-3); font-size: 10px; }
 .legend-actions {
-  display: inline-flex; align-items: center; gap: 2px;
-  opacity: 0; transition: opacity 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  opacity: 1;
 }
-.legend-row:hover .legend-actions,
-.legend-row.hidden .legend-actions { opacity: 1; }
 .legend-act {
   background: transparent; border: none; color: var(--fg-3);
   padding: 3px; border-radius: 3px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .legend-act:hover:not(:disabled) { background: var(--bg-elev); color: var(--fg); }
+.legend-act.danger:hover:not(:disabled) { color: var(--danger); }
 .legend-act:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .coord-readout {

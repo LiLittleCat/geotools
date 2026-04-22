@@ -517,7 +517,10 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       return [...ps, newLayer];
     });
   }, []);
-  const removeLayer = useCallback((id: string) => setLayers((ps) => ps.filter((p) => p.id !== id)), []);
+  const removeLayer = useCallback((id: string) => {
+    setLayers((ps) => ps.filter((p) => p.id !== id));
+    setSelectedId((current) => (current === id ? null : current));
+  }, []);
   const renameLayer = useCallback((id: string, name: string) =>
     setLayers((ps) => ps.map((p) => (p.id === id ? { ...p, name } : p))), []);
   const clearLayer = useCallback((id: string) =>
@@ -853,6 +856,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 onToggle={toggleVisible}
                 onZoomTo={zoomTo}
                 onSelect={(id) => { setSelectedId(id); setTool('cursor'); }}
+                onRemove={removeLayer}
                 crsLabel={crsLabel}
               />
             </div>

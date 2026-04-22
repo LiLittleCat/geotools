@@ -22,7 +22,7 @@ export function AppShell({ tab, setTab }: AppShellProps) {
     <div className="app-header">
       <div className="header-row">
         <div className="brand">
-          <div className="brand-mark" />
+          <div className="brand-mark" aria-hidden="true" />
           <span>GeoTools</span>
           <span className="brand-sub">{sub}</span>
         </div>

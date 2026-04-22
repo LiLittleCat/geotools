@@ -9,10 +9,11 @@ interface LegendProps {
   onToggle: (id: string) => void;
   onZoomTo: (id: string) => void;
   onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
   crsLabel: string;
 }
 
-export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, crsLabel }: LegendProps) {
+export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, onRemove, crsLabel }: LegendProps) {
   const valid = layers.filter((p) => p.parseResult && p.parseResult.ok);
   const shown = valid.filter((p) => p.visible).length;
   if (valid.length === 0) return null;
@@ -69,6 +70,18 @@ export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, crsLa
                 onClick={(e) => { e.stopPropagation(); onToggle(p.id); }}
               >
                 <Icon name={p.visible ? 'eye' : 'eye-off'} size={11} />
+              </button>
+              <button
+                type="button"
+                className="legend-act danger"
+                title="Remove layer"
+                aria-label="Remove layer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(p.id);
+                }}
+              >
+                <Icon name="trash" size={11} />
               </button>
             </span>
           </div>
