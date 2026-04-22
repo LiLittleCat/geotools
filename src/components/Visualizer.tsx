@@ -21,7 +21,11 @@ import {
 } from '../lib/parse';
 import { addGeomToGroup, pointIcon } from '../lib/leaflet-helpers';
 import { projectCoord, utmProjString } from '../lib/proj';
-import { buildLayerEditOptions, syncDraggedEditMarkers } from './visualizer-editing';
+import {
+  buildLayerEditOptions,
+  shouldSyncLayerEdit,
+  syncDraggedEditMarkers,
+} from './visualizer-editing';
 import { drawnLayerName } from './visualizer-layer-naming';
 import {
   buildAllLayersGeoJsonExport,
@@ -157,6 +161,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const handlePmDrag = useCallback((ev: any) => {
     syncDraggedEditMarkers(ev.target);
   }, []);
+
+  const handlePmMutation = useCallback((ev: any) => {
+    if (!shouldSyncLayerEdit(ev.type, ev)) return;
+    handlePmEdit(ev);
+  }, [handlePmEdit]);
 
   /* Init map */
   useEffect(() => {
@@ -301,9 +310,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 setSelectedId(p.id);
               });
               if (!p.locked) {
-                l.on('pm:edit', handlePmEdit);
+                l.on('pm:vertexadded', handlePmMutation);
+                l.on('pm:vertexremoved', handlePmMutation);
+                l.on('pm:markerdragend', handlePmMutation);
                 l.on('pm:drag', handlePmDrag);
-                l.on('pm:dragend', handlePmEdit);
+                l.on('pm:dragend', handlePmMutation);
               }
             });
             group.bindTooltip(p.name, {
@@ -326,7 +337,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       locked: p.locked,
       name: p.name,
     }));
-  }, [layers, handlePmDrag, handlePmEdit]);
+  }, [layers, handlePmDrag, handlePmMutation]);
 
   /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
      so the user sees their data on load. After that we never auto-fit — the current zoom

@@ -9,6 +9,11 @@ interface MarkerLike {
   setLatLng?: (latlng: LatLngLike) => void;
 }
 
+interface LayerEditSyncEventLike {
+  marker?: { _dragging?: boolean };
+  intersectionReset?: boolean;
+}
+
 function firstLeafLatLng(value: unknown): LatLngLike | null {
   if (!value) return null;
   if (Array.isArray(value)) {
@@ -45,6 +50,16 @@ export function buildLayerEditOptions() {
     allowSelfIntersection: true,
     allowEditing: true,
   } as const;
+}
+
+export function shouldSyncLayerEdit(eventType: string, event: LayerEditSyncEventLike = {}) {
+  if (eventType === 'pm:vertexadded') {
+    return !event.marker?._dragging;
+  }
+  if (eventType === 'pm:markerdragend') {
+    return !event.intersectionReset;
+  }
+  return eventType === 'pm:vertexremoved' || eventType === 'pm:dragend';
 }
 
 export function syncDraggedEditMarkers(layer: {

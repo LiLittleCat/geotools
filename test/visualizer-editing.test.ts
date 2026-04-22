@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildLayerEditOptions,
+  shouldSyncLayerEdit,
   syncDraggedEditMarkers,
 } from '../src/components/visualizer-editing.ts';
 
@@ -48,4 +49,28 @@ test('syncDraggedEditMarkers shifts Geoman markers to the layer position during 
     { lat: 3, lng: 5 },
     { lat: 3.5, lng: 5.5 },
   ]);
+});
+
+test('shouldSyncLayerEdit defers middle-marker insertions until the drag settles', () => {
+  assert.equal(
+    shouldSyncLayerEdit('pm:vertexadded', {
+      marker: { _dragging: true },
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldSyncLayerEdit('pm:vertexadded', {
+      marker: { _dragging: false },
+    }),
+    true,
+  );
+});
+
+test('shouldSyncLayerEdit persists only settled edit mutations', () => {
+  assert.equal(shouldSyncLayerEdit('pm:markerdragend', { intersectionReset: false }), true);
+  assert.equal(shouldSyncLayerEdit('pm:markerdragend', { intersectionReset: true }), false);
+  assert.equal(shouldSyncLayerEdit('pm:vertexremoved', {}), true);
+  assert.equal(shouldSyncLayerEdit('pm:dragend', {}), true);
+  assert.equal(shouldSyncLayerEdit('pm:edit', {}), false);
 });
