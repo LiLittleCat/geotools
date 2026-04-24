@@ -8,6 +8,6 @@ export interface ThemeContextValue {
 }
 
 export const ThemeCtx = createContext<ThemeContextValue>({
-  theme: 'light',
+  theme: 'auto',
   setTheme: () => {},
 });

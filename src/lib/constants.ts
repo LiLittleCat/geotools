@@ -37,7 +37,7 @@ export const TILE_STYLES = {
 export type TileStyleId = keyof typeof TILE_STYLES;
 
 export const TWEAKS_DEFAULTS = {
-  theme: 'light' as 'light' | 'dark' | 'auto',
+  theme: 'auto' as 'light' | 'dark' | 'auto',
   tileStyle: 'carto-voyager' as TileStyleId,
   autoRender: false,
   showLabels: true,
