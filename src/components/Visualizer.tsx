@@ -46,6 +46,9 @@ interface MakeLayerOpts {
   source?: Layer['source'];
 }
 
+const MAP_ZOOM_STEP = 0.5;
+const WHEEL_ZOOM_LOCK_MS = 140;
+
 /** Approximate a Leaflet circle (lng, lat, radius in meters) as a regular polygon
  *  using spherical earth math so shape survives GeoJSON round-trips. */
 function circleToPolygon(lng: number, lat: number, radiusMeters: number, steps = 256): Geom {
@@ -174,6 +177,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       center: [37.7749, -122.4194],
       zoom: 11,
       zoomControl: false,
+      zoomSnap: MAP_ZOOM_STEP,
+      zoomDelta: MAP_ZOOM_STEP,
+      scrollWheelZoom: false,
       worldCopyJump: true,
     });
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -209,8 +215,39 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       attribution: cfg.attr,
       maxZoom: 20,
       subdomains: 'abcd',
+      updateWhenZooming: false,
+      updateWhenIdle: true,
+      keepBuffer: 4,
     }).addTo(map);
   }, [tileStyle]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const container = map.getContainer();
+    let locked = false;
+    let lockTimer: number | null = null;
+
+    const onWheel = (event: Event) => {
+      const wheelEvent = event as WheelEvent;
+      L.DomEvent.stop(event);
+
+      if (locked || wheelEvent.deltaY === 0) return;
+
+      locked = true;
+      const direction = wheelEvent.deltaY < 0 ? 1 : -1;
+      const point = map.mouseEventToContainerPoint(wheelEvent);
+      map.setZoomAround(point, map.getZoom() + direction * MAP_ZOOM_STEP);
+      lockTimer = window.setTimeout(() => { locked = false; }, WHEEL_ZOOM_LOCK_MS);
+    };
+
+    L.DomEvent.on(container, 'wheel', onWheel);
+    return () => {
+      if (lockTimer !== null) window.clearTimeout(lockTimer);
+      L.DomEvent.off(container, 'wheel', onWheel);
+    };
+  }, []);
 
   /* Coord readout */
   useEffect(() => {

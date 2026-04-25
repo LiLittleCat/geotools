@@ -283,11 +283,13 @@ function FormatToggle({
   onChange,
   disabled,
   label,
+  hideDescription,
 }: {
   value: ConverterTextFormat;
   onChange: (value: ConverterTextFormat) => void;
   disabled?: boolean;
   label: string;
+  hideDescription?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
@@ -347,7 +349,7 @@ function FormatToggle({
       >
         <span className="format-select-copy">
           <span className="format-select-title">{selected.value}</span>
-          <span className="format-select-desc">{selected.description}</span>
+          {!hideDescription && <span className="format-select-desc">{selected.description}</span>}
         </span>
         <span className="format-select-chevron" aria-hidden="true">
           <Icon name="chevron" size={12} />
@@ -473,20 +475,14 @@ function CrsConverter() {
             <span>Source CRS</span>
             <CrsSelect value={fromCrs} onChange={setFromCrs} />
           </label>
-          <div className="converter-field compact">
+          <div className="converter-field compact output-format-field">
             <span>Output</span>
-            <div className="seg" aria-label="Output format">
-              {(['GeoJSON', 'WKT'] as ConverterTextFormat[]).map((format) => (
-                <button
-                  key={format}
-                  type="button"
-                  className={outputFormat === format ? 'active' : ''}
-                  onClick={() => setOutputFormat(format)}
-                >
-                  {format}
-                </button>
-              ))}
-            </div>
+            <FormatToggle
+              value={outputFormat}
+              onChange={setOutputFormat}
+              label="Output format"
+              hideDescription
+            />
           </div>
         </div>
 
@@ -580,11 +576,8 @@ function TargetCard({
         <button type="button" className="btn icon ghost danger" title="Remove target" onClick={onRemove}>
           <Icon name="trash" size={11} />
         </button>
-      </div>
-
-      {target.origin.enabled && (
-        <div className="crs-origin">
-          <div className="crs-origin-body">
+        {target.origin.enabled && (
+          <div className="crs-origin-inline">
             <div className="opt">
               <button
                 type="button"
@@ -620,8 +613,8 @@ function TargetCard({
               />
             </label>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="crs-card-output">
         <textarea
