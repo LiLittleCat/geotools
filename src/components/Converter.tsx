@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 
 import { AppShell, type Tab } from './AppShell';
+import { CopyIconButton, CopyMenuButton } from './CopyButton';
 import { Icon } from './Icon';
-import { PALETTE, SAMPLES } from '../lib/constants';
+import { SAMPLES } from '../lib/constants';
 import {
   parseGeometry,
   geomStats,
@@ -13,13 +15,15 @@ import {
 } from '../lib/parse';
 import {
   CRS_PRESETS,
+  CRS_PRESETS_CHINA,
+  CRS_PRESETS_COMMON,
   CRS_PRESETS_UTM_NS,
   crsShort,
-  isUtmCrs,
-  proj4,
   resolveCrs,
+  transformCoordBetweenCrs,
 } from '../lib/proj';
 import {
+  buildConverterCopyOptions,
   buildConverterCopyText,
   type ConverterTextFormat,
 } from './converter-format';
@@ -55,23 +59,6 @@ const DEFAULT_TARGETS: CsrTarget[] = [
   { id: 'target-utm50', crs: 'EPSG:32650', origin: { enabled: false, x: 0, y: 0, mode: 'after' } },
   { id: 'target-web-mercator', crs: 'EPSG:3857', origin: { enabled: false, x: 0, y: 0, mode: 'after' } },
 ];
-
-function useCopyable() {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async (text: string) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  return [copied, copy] as const;
-}
 
 function Converter() {
   const [module, setModule] = useState<ConverterModule>(() => {
@@ -133,8 +120,6 @@ function FormatConverter() {
   const [leftFormat, setLeftFormat] = useState<ConverterTextFormat>('GeoJSON');
   const [rightFormat, setRightFormat] = useState<ConverterTextFormat>('WKT');
   const [sourceSide, setSourceSide] = useState<FormatSide>('left');
-  const [leftCopied, copyLeft] = useCopyable();
-  const [rightCopied, copyRight] = useCopyable();
 
   const sourceText = sourceSide === 'left' ? leftText : rightText;
   const sourceParsed = useMemo(() => parseGeometry(sourceText), [sourceText]);
@@ -201,7 +186,7 @@ function FormatConverter() {
     <div className="format-grid">
       <section className="converter-panel">
         <div className="converter-panel-head">
-          <div>
+          <div className="format-select-row">
             <FormatToggle
               value={leftFormat}
               onChange={updateLeftFormat}
@@ -219,16 +204,16 @@ function FormatConverter() {
             placeholder="Paste GeoJSON or WKT..."
             spellCheck={false}
           />
-          <button
-            type="button"
+          <CopyIconButton
             className="btn icon ghost format-copy"
             disabled={!leftValue.trim()}
-            title={leftCopied ? 'Copied' : 'Copy'}
-            aria-label={leftCopied ? 'Copied' : 'Copy left geometry'}
-            onClick={() => copyLeft(leftValue)}
-          >
-            <Icon name={leftCopied ? 'check' : 'copy'} size={12} />
-          </button>
+            text={leftValue}
+            title="Copy"
+            copiedTitle="Copied!"
+            ariaLabel="Copy left geometry"
+            copiedAriaLabel="Copied!"
+            iconSize={12}
+          />
         </div>
         <div className="format-panel-foot">
           {leftMeta ? (
@@ -252,7 +237,7 @@ function FormatConverter() {
 
       <section className="converter-panel">
         <div className="converter-panel-head">
-          <div>
+          <div className="format-select-row">
             <FormatToggle
               value={rightFormat}
               onChange={updateRightFormat}
@@ -270,16 +255,16 @@ function FormatConverter() {
             placeholder="Paste GeoJSON or WKT..."
             spellCheck={false}
           />
-          <button
-            type="button"
+          <CopyIconButton
             className="btn icon ghost format-copy"
             disabled={!rightValue.trim()}
-            title={rightCopied ? 'Copied' : 'Copy'}
-            aria-label={rightCopied ? 'Copied' : 'Copy right geometry'}
-            onClick={() => copyRight(rightValue)}
-          >
-            <Icon name={rightCopied ? 'check' : 'copy'} size={12} />
-          </button>
+            text={rightValue}
+            title="Copy"
+            copiedTitle="Copied!"
+            ariaLabel="Copy right geometry"
+            copiedAriaLabel="Copied!"
+            iconSize={12}
+          />
         </div>
         <div className="format-panel-foot">
           {rightMeta ? (
@@ -304,19 +289,97 @@ function FormatToggle({
   disabled?: boolean;
   label: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const options: { value: ConverterTextFormat; description: string }[] = [
+    { value: 'GeoJSON', description: 'Structured coordinate data' },
+    { value: 'WKT', description: 'Compact geometry text' },
+  ];
+  const selected = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 6;
+      setMenuStyle({
+        position: 'fixed',
+        top: rect.bottom + gap,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    const closeOnOutside = (event: MouseEvent) => {
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('click', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('click', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <div className="format-toggle" aria-label={label}>
-      {(['GeoJSON', 'WKT'] as ConverterTextFormat[]).map((format) => (
-        <button
-          key={format}
-          type="button"
-          className={value === format ? 'active' : ''}
-          disabled={disabled && value !== format}
-          onClick={() => onChange(format)}
-        >
-          {format}
-        </button>
-      ))}
+    <div className="format-select-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`format-select-trigger ${open ? 'open' : ''}`}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="format-select-copy">
+          <span className="format-select-title">{selected.value}</span>
+          <span className="format-select-desc">{selected.description}</span>
+        </span>
+        <span className="format-select-chevron" aria-hidden="true">
+          <Icon name="chevron" size={12} />
+        </span>
+      </button>
+      {open && createPortal(
+        <div className="format-select-menu" ref={menuRef} style={menuStyle} role="listbox" aria-label={label}>
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`format-select-option ${active ? 'active' : ''}`}
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="format-select-option-copy">
+                  <span className="format-select-option-title">{option.value}</span>
+                  <span className="format-select-option-desc">{option.description}</span>
+                </span>
+                {active && <Icon name="check" size={12} />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -362,8 +425,8 @@ function CrsConverter() {
   const addTarget = () => {
     const used = new Set([fromCrs, ...targets.map((target) => target.crs)]);
     const nextCommon = CRS_PRESETS.find((preset) => !used.has(preset.id));
-    const nextUtm = CRS_PRESETS_UTM_NS.find((preset) => !used.has(preset.proj));
-    const nextCrs = nextCommon?.id ?? nextUtm?.proj ?? 'EPSG:4326';
+    const nextUtm = CRS_PRESETS_UTM_NS.find((preset) => !used.has(preset.id) && !used.has(preset.proj));
+    const nextCrs = nextCommon?.id ?? nextUtm?.id ?? 'EPSG:4326';
     setTargets((current) => [
       ...current,
       {
@@ -457,10 +520,9 @@ function CrsConverter() {
               <Icon name="plus" size={13} /> Add a target CRS
             </button>
           )}
-          {targets.map((target, index) => (
+          {targets.map((target) => (
             <TargetCard
               key={target.id}
-              color={PALETTE[index % PALETTE.length]}
               parsed={parsed}
               fromCrs={fromCrs}
               outputFormat={outputFormat}
@@ -477,7 +539,6 @@ function CrsConverter() {
 }
 
 interface TargetCardProps {
-  color: string;
   parsed: ParseResult;
   fromCrs: string;
   outputFormat: ConverterTextFormat;
@@ -488,7 +549,6 @@ interface TargetCardProps {
 }
 
 function TargetCard({
-  color,
   parsed,
   fromCrs,
   outputFormat,
@@ -497,78 +557,69 @@ function TargetCard({
   onOrigin,
   onRemove,
 }: TargetCardProps) {
-  const [copied, copy] = useCopyable();
   const result = useMemo(
     () => convertGeometry(parsed, fromCrs, target.crs, target.origin, outputFormat),
     [parsed, fromCrs, target.crs, target.origin, outputFormat],
   );
-  const stats = result.ok ? geomStats(result.geom) : null;
-  const showOrigin = isUtmCrs(target.crs) || target.crs === 'EPSG:3857';
+  const copyOptions = buildConverterCopyOptions(result.ok ? outputFormat : null);
 
   return (
-    <article className="crs-card" style={{ '--_c': color } as CSSProperties}>
+    <article className="crs-card">
       <div className="crs-card-head">
-        <span className="crs-card-swatch" />
         <div className="crs-card-main">
           <CrsSelect value={target.crs} onChange={(crs) => onChange({ crs })} />
-          <div className="crs-card-meta">
-            <span>{crsShort(fromCrs)} to {crsShort(target.crs)}</span>
-            {result.ok ? <span>{stats?.vertices ?? 0} pts</span> : <span>{result.error}</span>}
-          </div>
         </div>
+        <label className="crs-origin-toggle crs-origin-head-toggle">
+          <input
+            type="checkbox"
+            checked={target.origin.enabled}
+            onChange={(e) => onOrigin({ enabled: e.target.checked })}
+          />
+          <span>Origin offset</span>
+        </label>
         <button type="button" className="btn icon ghost danger" title="Remove target" onClick={onRemove}>
           <Icon name="trash" size={11} />
         </button>
       </div>
 
-      {showOrigin && (
+      {target.origin.enabled && (
         <div className="crs-origin">
-          <label className="crs-origin-toggle">
-            <input
-              type="checkbox"
-              checked={target.origin.enabled}
-              onChange={(e) => onOrigin({ enabled: e.target.checked })}
-            />
-            <span>Origin offset</span>
-          </label>
-          {target.origin.enabled && (
-            <div className="crs-origin-body">
-              <div className="opt">
-                <button
-                  type="button"
-                  className={target.origin.mode === 'after' ? 'active' : ''}
-                  onClick={() => onOrigin({ mode: 'after' })}
-                >
-                  Subtract after
-                </button>
-                <button
-                  type="button"
-                  className={target.origin.mode === 'before' ? 'active' : ''}
-                  onClick={() => onOrigin({ mode: 'before' })}
-                >
-                  Add before
-                </button>
-              </div>
-              <label>
-                <span>X / Easting</span>
-                <input
-                  type="number"
-                  value={target.origin.x}
-                  onChange={(e) => onOrigin({ x: e.target.value })}
-                  step="0.0001"
-                />
-              </label>
-              <label>
-                <span>Y / Northing</span>
-                <input
-                  type="number"
-                  value={target.origin.y}
-                  onChange={(e) => onOrigin({ y: e.target.value })}
-                  step="0.0001"
-                />
-              </label>
+          <div className="crs-origin-body">
+            <div className="opt">
+              <button
+                type="button"
+                className={target.origin.mode === 'after' ? 'active' : ''}
+                onClick={() => onOrigin({ mode: 'after' })}
+              >
+                Subtract after
+              </button>
+              <button
+                type="button"
+                className={target.origin.mode === 'before' ? 'active' : ''}
+                onClick={() => onOrigin({ mode: 'before' })}
+              >
+                Add before
+              </button>
             </div>
-          )}
+            <label>
+              <span>X / Easting</span>
+              <input
+                type="number"
+                value={target.origin.x}
+                onChange={(e) => onOrigin({ x: e.target.value })}
+                step="0.0001"
+              />
+            </label>
+            <label>
+              <span>Y / Northing</span>
+              <input
+                type="number"
+                value={target.origin.y}
+                onChange={(e) => onOrigin({ y: e.target.value })}
+                step="0.0001"
+              />
+            </label>
+          </div>
         </div>
       )}
 
@@ -579,16 +630,15 @@ function TargetCard({
           readOnly
           spellCheck={false}
         />
-        <button
-          type="button"
-          className="btn icon ghost crs-copy"
+        <CopyMenuButton
+          options={copyOptions}
+          getText={(format) => (result.ok ? buildConverterCopyText(result.geom, format) : '')}
           disabled={!result.ok}
-          title={copied ? 'Copied' : 'Copy'}
-          aria-label={copied ? 'Copied' : 'Copy target output'}
-          onClick={() => result.ok && copy(result.text)}
-        >
-          <Icon name={copied ? 'check' : 'copy'} size={12} />
-        </button>
+          wrapClassName="crs-copy-wrap"
+          buttonClassName="btn icon ghost crs-copy"
+          iconSize={12}
+          ariaLabel="Copy target output"
+        />
       </div>
     </article>
   );
@@ -616,9 +666,7 @@ function convertGeometry(
 ) {
   if (!parsed.ok) return { ok: false as const, error: parsed.error || 'Empty input' };
   try {
-    const fromP = resolveCrs(fromCrs) || 'WGS84';
-    const toP = resolveCrs(toCrs) || 'WGS84';
-    const same = fromP === toP;
+    const same = (resolveCrs(fromCrs) || fromCrs) === (resolveCrs(toCrs) || toCrs);
     const ox = Number(origin.x) || 0;
     const oy = Number(origin.y) || 0;
     const applyOrigin = origin.enabled && (ox || oy);
@@ -628,10 +676,7 @@ function convertGeometry(
       geom = transformGeom(geom, (coord) => {
         let point: number[] = [coord[0], coord[1]];
         if (applyOrigin && origin.mode === 'before') point = [point[0] + ox, point[1] + oy];
-        if (!same) {
-          const projected = proj4(fromP, toP, point);
-          point = [projected[0], projected[1]];
-        }
+        if (!same) point = transformCoordBetweenCrs(point, fromCrs, toCrs);
         if (applyOrigin && origin.mode === 'after') point = [point[0] - ox, point[1] - oy];
         return coord.length > 2 ? [point[0], point[1], coord[2]] : point;
       });
@@ -647,24 +692,218 @@ function convertGeometry(
   }
 }
 
-function CrsSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+interface CrsSelectOption {
+  value: string;
+  title: string;
+  description: string;
+  group: string;
+}
+
+function crsKindAndUnits(id: string, label: string): { kind: string; units: string } {
+  if (id === 'EPSG:3857' || /utm/i.test(label)) return { kind: 'projected', units: 'meters' };
+  return { kind: 'geographic', units: 'degrees' };
+}
+
+function normalizedCrsName(id: string, label: string) {
+  if (id === 'EPSG:4326') return 'WGS84';
+  if (id === 'EPSG:4490') return 'CGCS2000';
+  return label
+    .replace(/\s*\((lng\/lat|meters?)\)\s*/gi, ' ')
+    .replace(/\blng\/lat\b/gi, ' ')
+    .replace(/\bmeters?\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildCrsOption(
+  value: string,
+  title: string,
+  label: string,
+  group: string,
+): CrsSelectOption {
+  const { kind, units } = crsKindAndUnits(title, label);
+  return {
+    value,
+    title,
+    description: `${normalizedCrsName(title, label)} · ${kind} · ${units}`,
+    group,
+  };
+}
+
+const CRS_SELECT_GROUPS = [
+  {
+    label: 'Common',
+    options: CRS_PRESETS_COMMON.map((preset) => (
+      buildCrsOption(preset.id, preset.id, preset.label, 'Common')
+    )),
+  },
+  {
+    label: 'China',
+    options: CRS_PRESETS_CHINA.map((preset) => (
+      buildCrsOption(preset.id, preset.id, preset.label, 'China')
+    )),
+  },
+  {
+    label: 'UTM Zones',
+    options: CRS_PRESETS_UTM_NS.map((preset) => (
+      buildCrsOption(preset.id, preset.id, preset.label, 'UTM Zones')
+    )),
+  },
+] satisfies { label: string; options: CrsSelectOption[] }[];
+
+const CRS_SELECT_OPTIONS = CRS_SELECT_GROUPS.flatMap((group) => group.options);
+
+function selectedCrsOption(value: string) {
   return (
-    <select
-      className="crs-select block"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <optgroup label="Common">
-        {CRS_PRESETS.map((preset) => (
-          <option key={preset.id} value={preset.id}>{preset.id} - {preset.label}</option>
-        ))}
-      </optgroup>
-      <optgroup label="UTM Zones">
-        {CRS_PRESETS_UTM_NS.map((preset) => (
-          <option key={preset.id} value={preset.proj}>{preset.label}</option>
-        ))}
-      </optgroup>
-    </select>
+    CRS_SELECT_OPTIONS.find((option) => option.value === value) ||
+    CRS_SELECT_OPTIONS.find((option) => resolveCrs(option.value) === resolveCrs(value))
+  );
+}
+
+function CrsSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const selected = selectedCrsOption(value);
+  const selectedLabel = selected?.title || crsShort(value);
+  const selectedDescription = selected?.description || value;
+  const filteredGroups = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return CRS_SELECT_GROUPS;
+
+    return CRS_SELECT_GROUPS
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => (
+          option.title.toLowerCase().includes(query) ||
+          option.description.toLowerCase().includes(query) ||
+          option.value.toLowerCase().includes(query) ||
+          option.group.toLowerCase().includes(query)
+        )),
+      }))
+      .filter((group) => group.options.length > 0);
+  }, [search]);
+  const resultCount = filteredGroups.reduce((count, group) => count + group.options.length, 0);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 6;
+      const maxHeight = 320;
+      const below = window.innerHeight - rect.bottom - gap - 8;
+      const above = rect.top - gap - 8;
+      const openUp = below < 220 && above > below;
+      const height = Math.max(180, Math.min(maxHeight, openUp ? above : below));
+      setMenuStyle({
+        position: 'fixed',
+        top: openUp ? Math.max(8, rect.top - height - gap) : rect.bottom + gap,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: height,
+      });
+    };
+    const closeOnOutside = (event: MouseEvent) => {
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('click', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('click', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) searchRef.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  return (
+    <div className="crs-select-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`crs-select-trigger ${open ? 'open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!open) setSearch('');
+          setOpen((current) => !current);
+        }}
+      >
+        <span className="crs-select-value">
+          <span className="crs-select-title">{selectedLabel}</span>
+          <span className="crs-select-desc">{selectedDescription}</span>
+        </span>
+        <span className="crs-select-chevron" aria-hidden="true">
+          <Icon name="chevron" size={12} />
+        </span>
+      </button>
+      {open && createPortal(
+        <div className="crs-select-menu" ref={menuRef} style={menuStyle}>
+          <label className="crs-select-search">
+            <span>Search CRS</span>
+            <input
+              ref={searchRef}
+              type="search"
+              value={search}
+              placeholder="EPSG, UTM zone, Mercator..."
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <div className="crs-select-results-meta">
+            {resultCount === 1 ? '1 result' : `${resultCount} results`}
+          </div>
+          <div className="crs-select-options" role="listbox">
+            {filteredGroups.map((group) => (
+              <div className="crs-select-group" key={group.label}>
+                <div className="crs-select-group-label">{group.label}</div>
+                {group.options.map((option) => {
+                  const active = option.value === selected?.value;
+                  return (
+                    <button
+                      key={`${group.label}-${option.value}`}
+                      type="button"
+                      className={`crs-select-option ${active ? 'active' : ''}`}
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        onChange(option.value);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="crs-select-option-copy">
+                        <span className="crs-select-option-title">{option.title}</span>
+                        <span className="crs-select-option-desc">{option.description}</span>
+                      </span>
+                      {active && <Icon name="check" size={12} />}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {filteredGroups.length === 0 && (
+              <div className="crs-select-empty">No matching CRS</div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   );
 }
 

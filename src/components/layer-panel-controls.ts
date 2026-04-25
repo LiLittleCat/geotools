@@ -9,7 +9,6 @@ export interface LayerPanelTool {
 
 interface BuildLayerPanelControlsOptions {
   autoRender: boolean;
-  copied: boolean;
   expanded: boolean;
   hasText: boolean;
   isLocked: boolean;
@@ -17,7 +16,6 @@ interface BuildLayerPanelControlsOptions {
 
 export function buildLayerPanelControls({
   autoRender,
-  copied,
   expanded,
   hasText,
   isLocked,
@@ -25,7 +23,7 @@ export function buildLayerPanelControls({
   const textareaTools: LayerPanelTool[] = [
     {
       id: 'copy',
-      title: copied ? 'Copied!' : 'Copy to clipboard',
+      title: 'Copy to clipboard',
       disabled: !hasText,
     },
     {

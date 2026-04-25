@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
+import { CopyMenuButton } from './CopyButton';
 import { geomStats, type ParseResult } from '../lib/parse';
 import { buildLayerPanelControls } from './layer-panel-controls';
 import {
@@ -46,13 +47,10 @@ function LayerPanelInner({
   onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [copyAsOpen, setCopyAsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const swatchWrapRef = useRef<HTMLSpanElement | null>(null);
-  const copyAsWrapRef = useRef<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -70,19 +68,15 @@ function LayerPanelInner({
   }, [selected, collapsed]);
 
   useEffect(() => {
-    if (!colorOpen && !copyAsOpen) return;
+    if (!colorOpen) return;
     const onDoc = (e: MouseEvent) => {
       if (swatchWrapRef.current && !swatchWrapRef.current.contains(e.target as Node)) {
         setColorOpen(false);
-      }
-      if (copyAsWrapRef.current && !copyAsWrapRef.current.contains(e.target as Node)) {
-        setCopyAsOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setColorOpen(false);
-        setCopyAsOpen(false);
       }
     };
     document.addEventListener('click', onDoc);
@@ -91,7 +85,7 @@ function LayerPanelInner({
       document.removeEventListener('click', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [colorOpen, copyAsOpen]);
+  }, [colorOpen]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -119,25 +113,16 @@ function LayerPanelInner({
   const copyOptions = currentFormat ? buildLayerCopyOptions(currentFormat) : [];
   const controls = buildLayerPanelControls({
     autoRender,
-    copied,
     expanded,
     hasText,
     isLocked,
   });
-  const copyText = async (text: string) => {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch { /* noop */ }
-  };
 
   return (
     <div
       ref={panelRef}
       className={`panel ${focused || selected ? 'focused' : ''} ${errored ? 'errored' : ''} ${isLocked ? 'locked' : ''} ${collapsed ? 'collapsed' : ''}`}
-      style={{ ['--_c' as any]: layer.color } as CSSProperties}
+      style={{ '--_c': layer.color } as CSSProperties & Record<'--_c', string>}
       onClick={() => onSelect(layer.id)}
     >
       <div className="panel-head">
@@ -227,40 +212,14 @@ function LayerPanelInner({
         <div className="panel-input-tools">
           {controls.textareaTools.map((tool) => (
             tool.id === 'copy' ? (
-              <span key={tool.id} className="panel-input-menu-wrap" ref={copyAsWrapRef}>
-                <button
-                  type="button"
-                  className="btn icon ghost panel-input-tool"
-                  title={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
-                  aria-label={copied ? 'Copied!' : 'Copy as GeoJSON or WKT'}
-                  disabled={tool.disabled}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (tool.disabled) return;
-                    setCopyAsOpen((v) => !v);
-                  }}
-                >
-                  <Icon name={copied ? 'check' : 'copy'} size={11} />
-                </button>
-                {copyAsOpen && pr && pr.ok && (
-                  <div className="panel-input-menu" onClick={(e) => e.stopPropagation()}>
-                    {copyOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className="panel-input-menu-item"
-                        onClick={async () => {
-                          await copyText(buildLayerCopyText(layer.text, pr, option.value));
-                          setCopyAsOpen(false);
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                    <div className="panel-input-menu-note">WKT copies geometry only.</div>
-                  </div>
-                )}
-              </span>
+              <CopyMenuButton
+                key={tool.id}
+                options={copyOptions}
+                getText={(format) => buildLayerCopyText(layer.text, pr, format)}
+                disabled={tool.disabled || !pr?.ok}
+                buttonClassName="btn icon ghost panel-input-tool"
+                iconSize={11}
+              />
             ) : (
               <button
                 key={tool.id}
