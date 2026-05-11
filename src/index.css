@@ -1595,7 +1595,7 @@ textarea.geom-input.converter-textarea {
 /* Map */
 .map-wrap { position: relative; min-height: 0; background: var(--bg-0); display: flex; flex-direction: column; }
 .map-toolbar {
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
   background: var(--bg-0); flex-shrink: 0; z-index: 500;
 }
@@ -1639,6 +1639,8 @@ textarea.geom-input.converter-textarea {
   margin-left: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10.5px; color: var(--fg-3);
+  min-width: 220px;
+  text-align: right;
 }
 .map-inner { position: relative; flex: 1; min-height: 0; }
 #map { position: absolute; inset: 0; background: var(--map-bg); }
@@ -1782,13 +1784,170 @@ svg.leaflet-image-layer.leaflet-interactive path:focus {
 }
 
 /* Map overlays */
-.map-overlay-tl, .map-overlay-bl, .map-overlay-tr {
+.map-overlay-tl, .map-overlay-bl, .map-overlay-tr, .map-overlay-measure {
   position: absolute; z-index: 400; pointer-events: none;
 }
 .map-overlay-tl { top: 12px; left: 12px; }
 .map-overlay-bl { bottom: 24px; left: 12px; }
 .map-overlay-tr { top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-.map-overlay-tl > *, .map-overlay-bl > *, .map-overlay-tr > * { pointer-events: auto; }
+.map-overlay-measure { top: 12px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 24px)); }
+.map-overlay-tl > *, .map-overlay-bl > *, .map-overlay-tr > *, .map-overlay-measure > * { pointer-events: auto; }
+
+.measure-panel {
+  background: var(--overlay-bg); backdrop-filter: blur(8px);
+  border: 1px solid var(--border-soft); border-radius: 8px;
+  padding: 9px; font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px; color: var(--fg-2);
+  max-height: 210px; overflow: hidden;
+}
+.measure-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px;
+  color: var(--fg-3); margin-bottom: 8px; gap: 10px;
+}
+.measure-panel-actions {
+  display: flex; align-items: center; gap: 6px;
+}
+.measure-unit-group {
+  display: inline-flex; align-items: center; gap: 1px;
+  padding: 1px; border: 1px solid var(--border-soft); border-radius: 5px;
+  background: color-mix(in oklab, var(--bg-input) 72%, transparent);
+  text-transform: none; letter-spacing: 0;
+}
+.measure-unit-group button {
+  border: none; background: transparent; color: var(--fg-3);
+  font: inherit; font-size: 9.5px; padding: 2px 5px;
+  border-radius: 3px; cursor: pointer;
+}
+.measure-unit-group button:hover {
+  color: var(--fg);
+  background: var(--bg-elev);
+}
+.measure-unit-group button.active {
+  color: var(--bg-0);
+  background: var(--fg);
+}
+.measure-list { display: flex; flex-direction: column; gap: 6px; max-height: 170px; overflow: auto; padding-right: 2px; }
+.measure-item {
+  border: 1px solid var(--border-soft); border-radius: 6px;
+  padding: 7px; background: color-mix(in oklab, var(--bg-elev) 72%, transparent);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.measure-item:hover,
+.measure-item:focus-within {
+  border-color: color-mix(in oklab, var(--warning) 42%, var(--border-soft));
+  background: color-mix(in oklab, var(--warning) 7%, var(--bg-elev));
+}
+.measure-item-main {
+  display: grid; grid-template-columns: minmax(70px, 1fr) auto 22px; align-items: center; gap: 8px;
+  color: var(--fg-2);
+}
+.measure-primary-copy {
+  border: none; background: transparent; color: var(--fg);
+  font: inherit; font-weight: 600; text-align: right;
+  padding: 2px 4px; border-radius: 4px; cursor: pointer;
+}
+.measure-primary-copy:hover,
+.measure-primary-copy:focus-visible {
+  background: var(--bg-input);
+  outline: none;
+}
+.measure-delete {
+  border: none; background: transparent; color: var(--fg-3);
+  width: 20px; height: 20px; border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.measure-delete:hover,
+.measure-delete:focus-visible {
+  color: var(--danger);
+  background: var(--bg-input);
+  outline: none;
+}
+.measure-unit-row {
+  display: flex; flex-wrap: wrap; gap: 3px; margin-top: 7px;
+}
+.measure-unit-row.secondary { margin-top: 4px; }
+.measure-unit-row button {
+  border: 1px solid var(--border-soft);
+  background: color-mix(in oklab, var(--bg-input) 72%, transparent);
+  color: var(--fg-3); font: inherit; font-size: 9.5px;
+  border-radius: 4px; padding: 2px 6px; cursor: pointer;
+}
+.measure-unit-row button:hover,
+.measure-unit-row button:focus-visible {
+  color: var(--fg);
+  border-color: color-mix(in oklab, var(--warning) 42%, var(--border-soft));
+  outline: none;
+}
+.measure-unit-row button.active {
+  color: var(--bg-0);
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.measure-item-details {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+}
+.measure-item-details span {
+  border: 1px solid color-mix(in oklab, var(--warning) 26%, var(--border-soft));
+  border-radius: 999px; padding: 2px 5px;
+  color: var(--fg-3); background: color-mix(in oklab, var(--warning) 8%, transparent);
+}
+.measure-angle-list {
+  display: grid; grid-template-columns: 1fr; gap: 4px; margin-top: 7px;
+}
+.measure-angle-list button {
+  display: grid; grid-template-columns: 24px minmax(64px, 1fr) minmax(92px, 1fr);
+  align-items: center; gap: 8px; width: 100%;
+  border: 1px solid var(--border-soft); border-radius: 5px;
+  background: color-mix(in oklab, var(--bg-input) 68%, transparent);
+  color: var(--fg-2); font: inherit; padding: 4px 6px; cursor: pointer;
+}
+.measure-angle-list button:hover,
+.measure-angle-list button:focus-visible {
+  border-color: color-mix(in oklab, var(--warning) 42%, var(--border-soft));
+  background: color-mix(in oklab, var(--warning) 9%, var(--bg-input));
+  outline: none;
+}
+.measure-angle-list button span {
+  color: var(--fg-3); font-weight: 600;
+}
+.measure-angle-list button strong {
+  color: var(--fg); font-weight: 600;
+  text-align: right;
+}
+.measure-angle-list button code {
+  color: var(--fg-3); font: inherit;
+  text-align: right;
+}
+
+.direction-arrow-icon { color: var(--warning); }
+.direction-arrow-icon span {
+  position: absolute; left: 50%; top: 50%;
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 16px solid currentColor;
+  transform-origin: 50% 62%;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.32));
+}
+#map.direction-tool-active { cursor: crosshair; }
+#map.map-tool-cursor.leaflet-grab,
+#map.map-tool-cursor .leaflet-interactive {
+  cursor: default;
+}
+#map.map-tool-cursor.leaflet-dragging,
+#map.map-tool-cursor.leaflet-dragging .leaflet-grab,
+#map.map-tool-cursor.leaflet-dragging .leaflet-interactive {
+  cursor: grabbing;
+}
+
+@media (max-width: 980px) {
+  .tool-hint { width: 100%; min-width: 0; margin-left: 0; text-align: left; }
+  .map-overlay-measure { top: 58px; left: 12px; right: 12px; transform: none; width: auto; }
+  .measure-panel-head { align-items: flex-start; flex-direction: column; }
+  .measure-panel-actions { flex-wrap: wrap; }
+}
 
 .legend {
   background: var(--overlay-bg); backdrop-filter: blur(8px);

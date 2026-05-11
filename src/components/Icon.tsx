@@ -2,7 +2,7 @@ export type IconName =
   | 'plus' | 'x' | 'trash' | 'eye' | 'eye-off' | 'fit' | 'locate' | 'lock' | 'unlock'
   | 'upload' | 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'draw'
   | 'copy' | 'check' | 'sun' | 'moon' | 'auto' | 'file' | 'globe' | 'arrow-right' | 'swap' | 'settings'
-  | 'github' | 'circle' | 'chevron';
+  | 'github' | 'circle' | 'chevron' | 'ruler' | 'area' | 'compass';
 
 interface IconProps {
   name: IconName;
@@ -49,6 +49,9 @@ export function Icon({ name, size = 14 }: IconProps) {
     case 'settings': return <svg {...c}><circle cx="8" cy="8" r="2" /><path d="M12.5 8a4.5 4.5 0 00-.08-.83l1.4-1.1-1.4-2.4-1.66.66a4.5 4.5 0 00-1.44-.83L9 1.75H7l-.32 1.75a4.5 4.5 0 00-1.44.83L3.58 3.67l-1.4 2.4 1.4 1.1A4.5 4.5 0 003.5 8a4.5 4.5 0 00.08.83l-1.4 1.1 1.4 2.4 1.66-.66c.42.34.9.63 1.44.83L7 14.25h2l.32-1.75c.54-.2 1.02-.49 1.44-.83l1.66.66 1.4-2.4-1.4-1.1c.05-.27.08-.55.08-.83z" /></svg>;
     case 'circle': return <svg {...c}><circle cx="8" cy="8" r="5.5" /><circle cx="8" cy="8" r="0.9" fill="currentColor" stroke="none" /></svg>;
     case 'chevron': return <svg {...c}><path d="M6 4l4 4-4 4" /></svg>;
+    case 'ruler': return <svg {...c}><path d="M2.5 11.5l9-9 2 2-9 9z" /><path d="M5 9l1 1M7 7l1 1M9 5l1 1" /></svg>;
+    case 'area': return <svg {...c}><path d="M3 5l5-2 5 3-2 7H5z" /><path d="M6 7h4M6 10h3" /></svg>;
+    case 'compass': return <svg {...c}><circle cx="8" cy="8" r="6" /><path d="M10.5 5.5l-1.6 3.4-3.4 1.6 1.6-3.4z" /><circle cx="8" cy="8" r=".6" fill="currentColor" stroke="none" /></svg>;
     case 'github': return <svg {...c} fill="currentColor" stroke="none"><path fillRule="evenodd" clipRule="evenodd" d="M8 .5C3.58.5 0 4.08 0 8.5c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.58.82-2.14-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.14 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8.004 8.004 0 0016 8.5C16 4.08 12.42.5 8 .5z" /></svg>;
     default: return null;
   }

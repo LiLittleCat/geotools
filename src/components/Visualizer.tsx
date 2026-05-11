@@ -46,8 +46,191 @@ interface MakeLayerOpts {
   source?: Layer['source'];
 }
 
+type DrawTool = 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'circle';
+type MeasurementTool = 'measure-distance' | 'measure-area' | 'direction';
+type Tool = DrawTool | MeasurementTool;
+type MeasurementKind = 'distance' | 'area' | 'direction';
+type LengthUnit = 'm' | 'km' | 'mi' | 'ft';
+type AreaUnit = 'm2' | 'km2' | 'ha' | 'acre';
+
+interface BaseMeasurementResult {
+  id: string;
+  kind: MeasurementKind;
+  title: string;
+}
+
+interface DistanceMeasurementResult extends BaseMeasurementResult {
+  kind: 'distance';
+  meters: number;
+  pointCount: number;
+  lengthUnit: LengthUnit;
+}
+
+interface AreaMeasurementResult extends BaseMeasurementResult {
+  kind: 'area';
+  squareMeters: number;
+  perimeterMeters: number;
+  areaUnit: AreaUnit;
+  perimeterUnit: LengthUnit;
+}
+
+interface DirectionMeasurementResult extends BaseMeasurementResult {
+  kind: 'direction';
+  bearing: number;
+  meters: number;
+  lengthUnit: LengthUnit;
+  angles: { label: 'E' | 'S' | 'W' | 'N'; degrees: number }[];
+}
+
+type MeasurementResult = DistanceMeasurementResult | AreaMeasurementResult | DirectionMeasurementResult;
+
+type MeasurementLayer = L.Layer & {
+  getLatLngs?: () => unknown;
+  setStyle?: (style: L.PathOptions) => void;
+};
+
 const MAP_ZOOM_STEP = 0.5;
 const WHEEL_ZOOM_LOCK_MS = 140;
+const MEASURE_COLOR = '#f97316';
+const EARTH_RADIUS_METERS = 6378137;
+const LENGTH_UNITS: { id: LengthUnit; label: string }[] = [
+  { id: 'm', label: 'm' },
+  { id: 'km', label: 'km' },
+  { id: 'mi', label: 'mi' },
+  { id: 'ft', label: 'ft' },
+];
+const AREA_UNITS: { id: AreaUnit; label: string }[] = [
+  { id: 'm2', label: 'm²' },
+  { id: 'km2', label: 'km²' },
+  { id: 'ha', label: 'ha' },
+  { id: 'acre', label: 'acre' },
+];
+
+function isMeasurementTool(tool: Tool): tool is MeasurementTool {
+  return tool === 'measure-distance' || tool === 'measure-area' || tool === 'direction';
+}
+
+function flattenLatLngs(value: unknown): L.LatLng[] {
+  if (value instanceof L.LatLng) return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => flattenLatLngs(item));
+  return [];
+}
+
+function formatDistanceForUnit(meters: number, unit: LengthUnit) {
+  if (unit === 'km') return `${(meters / 1000).toFixed(3)} km`;
+  if (unit === 'mi') return `${(meters / 1609.344).toFixed(3)} mi`;
+  if (unit === 'ft') return `${(meters * 3.28084).toFixed(1)} ft`;
+  return `${meters.toFixed(1)} m`;
+}
+
+function formatAreaForUnit(squareMeters: number, unit: AreaUnit) {
+  if (unit === 'km2') return `${(squareMeters / 1_000_000).toFixed(4)} km²`;
+  if (unit === 'ha') return `${(squareMeters / 10_000).toFixed(3)} ha`;
+  if (unit === 'acre') return `${(squareMeters / 4046.8564224).toFixed(3)} acre`;
+  return `${squareMeters.toFixed(1)} m²`;
+}
+
+function pathDistance(points: L.LatLng[]) {
+  return points.reduce((sum, point, index) => {
+    if (index === 0) return 0;
+    return sum + points[index - 1].distanceTo(point);
+  }, 0);
+}
+
+function polygonArea(points: L.LatLng[]) {
+  if (points.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    const lng1 = (p1.lng * Math.PI) / 180;
+    const lng2 = (p2.lng * Math.PI) / 180;
+    const lat1 = (p1.lat * Math.PI) / 180;
+    const lat2 = (p2.lat * Math.PI) / 180;
+    area += (lng2 - lng1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+  return Math.abs((area * EARTH_RADIUS_METERS * EARTH_RADIUS_METERS) / 2);
+}
+
+function normalizeDegrees(degrees: number) {
+  return ((degrees % 360) + 360) % 360;
+}
+
+function bearingDegrees(start: L.LatLng, end: L.LatLng) {
+  const lat1 = (start.lat * Math.PI) / 180;
+  const lat2 = (end.lat * Math.PI) / 180;
+  const dLng = ((end.lng - start.lng) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2)
+    - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return normalizeDegrees((Math.atan2(y, x) * 180) / Math.PI);
+}
+
+function angleBetweenDegrees(a: number, b: number) {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function formatAngle(degrees: number) {
+  return `${degrees.toFixed(2)}° / ${((degrees * Math.PI) / 180).toFixed(4)} rad`;
+}
+
+function distanceNumberForUnit(meters: number, unit: LengthUnit) {
+  if (unit === 'km') return (meters / 1000).toFixed(3);
+  if (unit === 'mi') return (meters / 1609.344).toFixed(3);
+  if (unit === 'ft') return (meters * 3.28084).toFixed(1);
+  return meters.toFixed(1);
+}
+
+function areaNumberForUnit(squareMeters: number, unit: AreaUnit) {
+  if (unit === 'km2') return (squareMeters / 1_000_000).toFixed(4);
+  if (unit === 'ha') return (squareMeters / 10_000).toFixed(3);
+  if (unit === 'acre') return (squareMeters / 4046.8564224).toFixed(3);
+  return squareMeters.toFixed(1);
+}
+
+function measurementPrimary(item: MeasurementResult) {
+  if (item.kind === 'distance') return formatDistanceForUnit(item.meters, item.lengthUnit);
+  if (item.kind === 'area') return formatAreaForUnit(item.squareMeters, item.areaUnit);
+  return `Azimuth ${formatAngle(item.bearing)}`;
+}
+
+function measurementCopyNumber(item: MeasurementResult) {
+  if (item.kind === 'distance') return distanceNumberForUnit(item.meters, item.lengthUnit);
+  if (item.kind === 'area') return areaNumberForUnit(item.squareMeters, item.areaUnit);
+  return item.bearing.toFixed(2);
+}
+
+function arrowIcon(bearing: number) {
+  return L.divIcon({
+    className: 'direction-arrow-icon',
+    html: `<span style="transform: translate(-50%, -50%) rotate(${bearing}deg)"></span>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+async function writeClipboardText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch { /* fallback below */ }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.top = '0';
+  textArea.style.left = '0';
+  textArea.style.width = '1px';
+  textArea.style.height = '1px';
+  textArea.style.opacity = '0';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  textArea.setSelectionRange(0, text.length);
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textArea);
+  if (!copied) throw new Error('copy failed');
+}
 
 /** Approximate a Leaflet circle (lng, lat, radius in meters) as a regular polygon
  *  using spherical earth math so shape survives GeoJSON round-trips. */
@@ -92,14 +275,18 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const mapRef = useRef<L.Map | null>(null);
   const tileRef = useRef<L.TileLayer | null>(null);
   const layerGroupsRef = useRef<Record<string, L.FeatureGroup>>({});
+  const measurementGroupRef = useRef<L.FeatureGroup | null>(null);
+  const measurementLayersRef = useRef<Record<string, L.Layer>>({});
+  const measurementSeqRef = useRef(1);
 
   const [tileStyle, setTileStyle] = useState<TileStyleId>(TWEAKS_DEFAULTS.tileStyle);
   useContext(ThemeCtx); // consume theme ctx (re-render on theme change handled globally via data-theme on html)
   const [autoRender, setAutoRender] = useState<boolean>(TWEAKS_DEFAULTS.autoRender);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [coord, setCoord] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
-  const [tool, setTool] = useState<'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'circle'>('cursor');
+  const [tool, setTool] = useState<Tool>('cursor');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<MeasurementResult[]>([]);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'GeoJSON' | 'WKT'>('GeoJSON');
@@ -115,7 +302,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [layers, setLayers] = useState<Layer[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('geotools.layers') || 'null');
-      if (saved && Array.isArray(saved) && saved.length > 0) {
+      if (Array.isArray(saved)) {
         return saved.map((p: any, i: number): Layer => ({
           id: p.id || Math.random().toString(36).slice(2, 9),
           name: p.name || `Geometry ${i + 1}`,
@@ -135,6 +322,13 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   useEffect(() => { layersRef.current = layers; }, [layers]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
+
+  useEffect(() => {
+    const container = mapRef.current?.getContainer();
+    if (!container) return;
+    container.classList.toggle('map-tool-cursor', tool === 'cursor');
+    return () => { container.classList.remove('map-tool-cursor'); };
+  }, [tool]);
 
   /* pm:edit handler (bound per-layer in render effect) */
   const handlePmEdit = useCallback((ev: any) => {
@@ -184,8 +378,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     });
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     (map as any).pm?.setGlobalOptions({ snappable: true, snapDistance: 15 });
+    measurementGroupRef.current = L.featureGroup().addTo(map);
     mapRef.current = map;
     return () => {
+      measurementGroupRef.current = null;
+      measurementLayersRef.current = {};
       layerGroupsRef.current = {};
       lastRenderedRef.current = [];
       map.remove();
@@ -403,6 +600,128 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     return PALETTE.find((c) => !used.has(c)) || PALETTE[layersRef.current.length % PALETTE.length];
   }, []);
 
+  const showToast = useCallback((msg: string, err?: boolean) => {
+    setToast({ msg, err });
+    setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const copyMeasurementText = useCallback(async (text: string) => {
+    try {
+      await writeClipboardText(text);
+      showToast('Copied measurement');
+    } catch {
+      showToast('Copy failed', true);
+    }
+  }, [showToast]);
+
+  const addMeasurementFromPoints = useCallback((
+    toolName: MeasurementTool,
+    latLngs: L.LatLng[],
+    overlay: L.Layer,
+  ) => {
+    const group = measurementGroupRef.current;
+    if (!group) return;
+
+    if (latLngs.length < 2 || (toolName === 'measure-area' && latLngs.length < 3)) {
+      showToast('Measurement needs more points', true);
+      return;
+    }
+
+    const id = `m${measurementSeqRef.current++}`;
+    const index = measurementSeqRef.current - 1;
+    let result: MeasurementResult;
+
+    if (toolName === 'measure-distance') {
+      const meters = pathDistance(latLngs);
+      result = {
+        id,
+        kind: 'distance',
+        title: `Distance ${index}`,
+        meters,
+        pointCount: latLngs.length,
+        lengthUnit: 'm',
+      };
+    } else if (toolName === 'measure-area') {
+      const squareMeters = polygonArea(latLngs);
+      result = {
+        id,
+        kind: 'area',
+        title: `Area ${index}`,
+        squareMeters,
+        perimeterMeters: pathDistance([...latLngs, latLngs[0]]),
+        areaUnit: 'm2',
+        perimeterUnit: 'm',
+      };
+    } else {
+      const start = latLngs[0];
+      const end = latLngs[latLngs.length - 1];
+      const bearing = bearingDegrees(start, end);
+      const cardinals = [
+        ['E', 90],
+        ['S', 180],
+        ['W', 270],
+        ['N', 0],
+      ] as const;
+      result = {
+        id,
+        kind: 'direction',
+        title: `Direction ${index}`,
+        bearing,
+        meters: start.distanceTo(end),
+        lengthUnit: 'm',
+        angles: cardinals.map(([label, degrees]) => ({
+          label,
+          degrees: angleBetweenDegrees(bearing, degrees),
+        })),
+      };
+    }
+
+    overlay.bindTooltip(`${result.title}: ${measurementPrimary(result)}`, {
+      permanent: false,
+      direction: 'top',
+      className: 'geo-tip measure-tip',
+      sticky: true,
+    });
+    overlay.addTo(group);
+    measurementLayersRef.current[id] = overlay;
+    setMeasurements((items) => [result, ...items]);
+  }, [showToast]);
+
+  const addMeasurement = useCallback((toolName: MeasurementTool, layer: MeasurementLayer) => {
+    const latLngs = flattenLatLngs(layer.getLatLngs?.());
+
+    if (typeof layer.setStyle === 'function') {
+      layer.setStyle({
+        color: MEASURE_COLOR,
+        weight: 2.5,
+        fillColor: MEASURE_COLOR,
+        fillOpacity: toolName === 'measure-area' ? 0.16 : 0.05,
+      });
+    }
+
+    addMeasurementFromPoints(toolName, latLngs, layer);
+  }, [addMeasurementFromPoints]);
+
+  const clearMeasurements = useCallback(() => {
+    measurementGroupRef.current?.clearLayers();
+    measurementLayersRef.current = {};
+    measurementSeqRef.current = 1;
+    setMeasurements([]);
+  }, []);
+
+  const removeMeasurement = useCallback((id: string) => {
+    const layer = measurementLayersRef.current[id];
+    if (layer) measurementGroupRef.current?.removeLayer(layer);
+    delete measurementLayersRef.current[id];
+    setMeasurements((items) => items.filter((item) => item.id !== id));
+  }, []);
+
+  const updateMeasurement = useCallback((id: string, update: Partial<MeasurementResult>) => {
+    setMeasurements((items) => items.map((item) => (
+      item.id === id ? ({ ...item, ...update } as MeasurementResult) : item
+    )));
+  }, []);
+
   useEffect(() => {
     const map = mapRef.current as any;
     if (!map || !map.pm) return;
@@ -414,6 +733,11 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     };
 
     disablePmModes();
+    Object.values(layerGroupsRef.current).forEach((group) => {
+      group.eachLayer((l: any) => {
+        try { l.pm?.disable(); } catch { /* ignore */ }
+      });
+    });
 
     const pmStyle = () => {
       const nextColor = nextAvailableColor();
@@ -426,14 +750,15 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       };
     };
 
+    const measureStyle = () => ({
+      pathOptions: { color: MEASURE_COLOR, weight: 2.5, fillColor: MEASURE_COLOR, fillOpacity: 0.16 },
+      templineStyle: { color: MEASURE_COLOR },
+      hintlineStyle: { color: MEASURE_COLOR, dashArray: '5,5' },
+      markerStyle: { icon: pointIcon(MEASURE_COLOR) },
+      continueDrawing: false,
+    });
+
     if (tool === 'cursor') {
-      // Disable edit mode on all layers first — drag mode is part of the same PM config
-      // for the selected layer, so we let Geoman clean up both together.
-      Object.entries(layerGroupsRef.current).forEach(([, group]) => {
-        group.eachLayer((l: any) => {
-          try { l.pm?.disable(); } catch { /* ignore */ }
-        });
-      });
       // Enable vertex editing and whole-layer dragging only on the selected, unlocked
       // layer. `syncLayersOnDrag: true` keeps sibling features in the same FeatureGroup
       // moving together, so points no longer lag behind the dragged geometry.
@@ -461,12 +786,95 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       map.pm.enableDraw('Rectangle', pmStyle());
     } else if (tool === 'circle') {
       map.pm.enableDraw('Circle', pmStyle());
+    } else if (tool === 'measure-distance') {
+      map.pm.enableDraw('Line', measureStyle());
+    } else if (tool === 'measure-area') {
+      map.pm.enableDraw('Polygon', measureStyle());
     }
 
     return () => {
       disablePmModes();
     };
   }, [tool, selectedId, layers, nextAvailableColor]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const group = measurementGroupRef.current;
+    if (tool !== 'direction' || !map || !group) return;
+
+    let start: L.LatLng | null = null;
+    let preview: L.FeatureGroup | null = null;
+    let line: L.Polyline | null = null;
+    let arrow: L.Marker | null = null;
+
+    const clearPreview = () => {
+      if (preview) group.removeLayer(preview);
+      preview = null;
+      line = null;
+      arrow = null;
+    };
+
+    const updatePreview = (end: L.LatLng) => {
+      if (!start) return;
+      const bearing = bearingDegrees(start, end);
+      if (!preview) {
+        line = L.polyline([start, end], {
+          color: MEASURE_COLOR,
+          weight: 2.5,
+          dashArray: '6 6',
+          interactive: false,
+        });
+        arrow = L.marker(end, {
+          interactive: false,
+          icon: arrowIcon(bearing),
+        });
+        preview = L.featureGroup([line, arrow]).addTo(group);
+      } else {
+        line?.setLatLngs([start, end]);
+        arrow?.setLatLng(end);
+        arrow?.setIcon(arrowIcon(bearing));
+      }
+    };
+
+    const onClick = (event: L.LeafletMouseEvent) => {
+      if (!start) {
+        start = event.latlng;
+        updatePreview(event.latlng);
+        return;
+      }
+
+      const end = event.latlng;
+      if (start.distanceTo(end) < 0.01) return;
+      const bearing = bearingDegrees(start, end);
+      const finalLine = L.polyline([start, end], {
+        color: MEASURE_COLOR,
+        weight: 2.5,
+        dashArray: '6 6',
+      });
+      const finalArrow = L.marker(end, {
+        interactive: false,
+        icon: arrowIcon(bearing),
+      });
+      const finalRay = L.featureGroup([finalLine, finalArrow]);
+      clearPreview();
+      addMeasurementFromPoints('direction', [start, end], finalRay);
+      setTool('cursor');
+    };
+
+    const onMouseMove = (event: L.LeafletMouseEvent) => {
+      if (start) updatePreview(event.latlng);
+    };
+
+    map.getContainer().classList.add('direction-tool-active');
+    map.on('click', onClick);
+    map.on('mousemove', onMouseMove);
+    return () => {
+      map.off('click', onClick);
+      map.off('mousemove', onMouseMove);
+      map.getContainer().classList.remove('direction-tool-active');
+      clearPreview();
+    };
+  }, [tool, addMeasurementFromPoints]);
 
   /* Geoman create handler */
   const addDrawnLayer = useCallback((geom: Geom, shape?: string) => {
@@ -484,13 +892,21 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     setLayers((ps) => [...ps, newLayer]);
     setSelectedId(newLayer.id);
     showToast(`Created ${geom.type} as new layer`);
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const onCreate = (e: any) => {
       const layer = e.layer;
+      const activeTool = toolRef.current;
+      if (isMeasurementTool(activeTool)) {
+        map.removeLayer(layer);
+        addMeasurement(activeTool, layer);
+        setTool('cursor');
+        return;
+      }
+
       let geom: Geom | null = null;
       // L.Circle is not GeoJSON-native — approximate as a 256-sided polygon so it
       // round-trips through GeoJSON/WKT and can be vertex-edited like any polygon.
@@ -512,12 +928,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     return () => {
       (map as any).off('pm:create', onCreate);
     };
-  }, [addDrawnLayer]);
-
-  const showToast = useCallback((msg: string, err?: boolean) => {
-    setToast({ msg, err });
-    setTimeout(() => setToast(null), 2200);
-  }, []);
+  }, [addDrawnLayer, addMeasurement]);
 
   /* Layer actions — wrapped in useCallback so memoized LayerPanel children
      don't re-render on unrelated state changes (e.g. color-picker drags). */
@@ -847,11 +1258,14 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
         <div className="map-wrap">
           <div className="map-toolbar">
-            <div className="tool-group">
+            <div className="tool-group" aria-label="Edit tools">
               <button className={`tool-btn ${tool === 'cursor' ? 'active' : ''}`} onClick={() => setTool('cursor')} title="Cursor (select/edit)">
                 <Icon name="cursor" size={12} />
                 <span className="tool-btn-label">Cursor</span>
               </button>
+            </div>
+
+            <div className="tool-group" aria-label="Draw tools">
               <button className={`tool-btn ${tool === 'point' ? 'active' : ''}`} onClick={() => setTool('point')} title="Draw point">
                 <Icon name="point" size={12} />
                 <span className="tool-btn-label">Point</span>
@@ -873,6 +1287,33 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 <span className="tool-btn-label">Circle</span>
               </button>
             </div>
+
+            <div className="tool-group operation-tools" aria-label="Measure tools">
+              <button
+                className={`tool-btn ${tool === 'measure-distance' ? 'active' : ''}`}
+                onClick={() => setTool('measure-distance')}
+                title="Measure distance"
+              >
+                <Icon name="ruler" size={12} />
+                <span className="tool-btn-label">Distance</span>
+              </button>
+              <button
+                className={`tool-btn ${tool === 'measure-area' ? 'active' : ''}`}
+                onClick={() => setTool('measure-area')}
+                title="Measure area"
+              >
+                <Icon name="area" size={12} />
+                <span className="tool-btn-label">Area</span>
+              </button>
+              <button
+                className={`tool-btn ${tool === 'direction' ? 'active' : ''}`}
+                onClick={() => setTool('direction')}
+                title="Draw direction ray"
+              >
+                <Icon name="compass" size={12} />
+                <span className="tool-btn-label">Direction</span>
+              </button>
+            </div>
             <span className="tool-hint">
               {tool === 'cursor' && 'Click a geometry to edit vertices. Drag to move.'}
               {tool === 'point' && 'Click map to place a point'}
@@ -880,6 +1321,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               {tool === 'polygon' && 'Click to add vertices · double-click to finish'}
               {tool === 'rect' && 'Click + drag to draw a rectangle'}
               {tool === 'circle' && 'Click center, drag to set radius'}
+              {tool === 'measure-distance' && 'Click line vertices · double-click to finish distance'}
+              {tool === 'measure-area' && 'Click polygon vertices · double-click to finish area'}
+              {tool === 'direction' && 'Click start · move to preview ray · click end'}
             </span>
           </div>
 
@@ -944,6 +1388,152 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 )}
               </div>
             </div>
+
+            {measurements.length > 0 && (
+              <div className="map-overlay-measure">
+                <div className="measure-panel">
+                  <div className="measure-panel-head">
+                    <span>Measurements</span>
+                    <div className="measure-panel-actions">
+                      <button className="legend-act danger" onClick={clearMeasurements} title="Clear measurements">
+                        <Icon name="trash" size={11} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="measure-list">
+                    {measurements.map((item) => (
+                      <div
+                        className={`measure-item ${item.kind}`}
+                        key={item.id}
+                      >
+                        <div className="measure-item-main">
+                          <span>{item.title}</span>
+                          <button
+                            className="measure-primary-copy"
+                            type="button"
+                            title="Copy value"
+                            onClick={() => copyMeasurementText(measurementCopyNumber(item))}
+                          >
+                            {measurementPrimary(item)}
+                          </button>
+                          <button
+                            className="measure-delete"
+                            type="button"
+                            title="Delete result"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeMeasurement(item.id);
+                            }}
+                          >
+                            <Icon name="x" size={10} />
+                          </button>
+                        </div>
+                        {item.kind === 'distance' && (
+                          <>
+                            <div className="measure-unit-row">
+                              {LENGTH_UNITS.map((unit) => (
+                                <button
+                                  key={unit.id}
+                                  type="button"
+                                  className={item.lengthUnit === unit.id ? 'active' : ''}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateMeasurement(item.id, { lengthUnit: unit.id });
+                                  }}
+                                >
+                                  {unit.label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="measure-item-details">
+                              <span>{item.pointCount} points</span>
+                              <span>{item.meters.toFixed(2)} m raw</span>
+                            </div>
+                          </>
+                        )}
+                        {item.kind === 'area' && (
+                          <>
+                            <div className="measure-unit-row">
+                              {AREA_UNITS.map((unit) => (
+                                <button
+                                  key={unit.id}
+                                  type="button"
+                                  className={item.areaUnit === unit.id ? 'active' : ''}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateMeasurement(item.id, { areaUnit: unit.id });
+                                  }}
+                                >
+                                  {unit.label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="measure-unit-row secondary">
+                              {LENGTH_UNITS.map((unit) => (
+                                <button
+                                  key={unit.id}
+                                  type="button"
+                                  className={item.perimeterUnit === unit.id ? 'active' : ''}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateMeasurement(item.id, { perimeterUnit: unit.id });
+                                  }}
+                                >
+                                  {unit.label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="measure-item-details">
+                              <span>Perimeter {formatDistanceForUnit(item.perimeterMeters, item.perimeterUnit)}</span>
+                              <span>{item.squareMeters.toFixed(2)} m² raw</span>
+                            </div>
+                          </>
+                        )}
+                        {item.kind === 'direction' && (
+                          <>
+                            <div className="measure-unit-row">
+                              {LENGTH_UNITS.map((unit) => (
+                                <button
+                                  key={unit.id}
+                                  type="button"
+                                  className={item.lengthUnit === unit.id ? 'active' : ''}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateMeasurement(item.id, { lengthUnit: unit.id });
+                                  }}
+                                >
+                                  {unit.label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="measure-item-details">
+                              <span>Length {formatDistanceForUnit(item.meters, item.lengthUnit)}</span>
+                            </div>
+                            <div className="measure-angle-list">
+                              {item.angles.map((angle) => (
+                                <button
+                                  key={angle.label}
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    copyMeasurementText(`${angle.degrees.toFixed(2)}\t${((angle.degrees * Math.PI) / 180).toFixed(4)}`);
+                                  }}
+                                  title={`Copy ${angle.label} angle`}
+                                >
+                                  <span>{angle.label}</span>
+                                  <strong>{angle.degrees.toFixed(2)}°</strong>
+                                  <code>{((angle.degrees * Math.PI) / 180).toFixed(4)} rad</code>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="map-overlay-bl">
               {coordDisplay && (
