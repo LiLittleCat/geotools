@@ -106,6 +106,7 @@ type MeasurementLayer = L.Layer & {
 const MAP_ZOOM_STEP = 0.5;
 const MAP_MAX_ZOOM = 24;
 const TILE_NATIVE_MAX_ZOOM = 20;
+const ALL_LAYERS_FIT_MAX_ZOOM = 16;
 const WHEEL_ZOOM_LOCK_MS = 140;
 const MEASURE_COLOR = '#f97316';
 const EARTH_RADIUS_METERS = 6378137;
@@ -125,6 +126,17 @@ const DEFAULT_VISUALIZER_CRS = 'EPSG:4326';
 const DEFAULT_VISUALIZER_OFFSET: VisualizerCrsOffset = { enabled: false, x: 0, y: 0 };
 const DEFAULT_MAP_CENTER: L.LatLngExpression = [37.7749, -122.4194];
 const DEFAULT_MAP_ZOOM = 11;
+const TOOL_HINTS: Record<Tool, string> = {
+  cursor: 'Click a geometry to edit vertices. Drag to move.',
+  point: 'Click map to place a point',
+  line: 'Click to add vertices · double-click to finish',
+  polygon: 'Click to add vertices · double-click to finish',
+  rect: 'Click + drag to draw a rectangle',
+  circle: 'Click center, drag to set radius',
+  'measure-distance': 'Click line vertices · double-click to finish distance',
+  'measure-area': 'Click polygon vertices · double-click to finish area',
+  direction: 'Click start · move to preview ray · click end',
+};
 
 function isMeasurementTool(tool: Tool): tool is MeasurementTool {
   return tool === 'measure-distance' || tool === 'measure-area' || tool === 'direction';
@@ -290,28 +302,60 @@ function nextLayerName(currentName: string, text: string) {
   return extractSingleFeatureName(text) || currentName;
 }
 
+function extendBoundsWithCoordinates(bounds: L.LatLngBounds, coordinates: unknown) {
+  if (!Array.isArray(coordinates)) return;
+  const [lng, lat] = coordinates;
+  if (typeof lng === 'number' && typeof lat === 'number') {
+    if (Number.isFinite(lng) && Number.isFinite(lat)) bounds.extend([lat, lng]);
+    return;
+  }
+  coordinates.forEach((item) => extendBoundsWithCoordinates(bounds, item));
+}
+
+function geomBoundsForMapView(geom: Geom) {
+  const bounds = L.latLngBounds([]);
+  if (geom.type === 'GeometryCollection') {
+    geom.geometries.forEach((part) => {
+      const childBounds = geomBoundsForMapView(part as Geom);
+      if (childBounds) bounds.extend(childBounds);
+    });
+  } else {
+    extendBoundsWithCoordinates(bounds, (geom as { coordinates?: unknown }).coordinates);
+  }
+  return bounds.isValid() ? bounds : null;
+}
+
+function combineMapBounds(boundsList: Array<L.LatLngBounds | null | undefined>) {
+  const combined = L.latLngBounds([]);
+  boundsList.forEach((bounds) => {
+    if (bounds?.isValid()) combined.extend(bounds);
+  });
+  return combined.isValid() ? combined : null;
+}
+
 function layerBoundsForMapView(
   layers: Layer[],
   sourceCrs: string,
   offset: ReturnType<typeof numericCoordinateOffset>,
 ) {
-  const group = L.featureGroup();
-  layers.forEach((layer) => {
+  const boundsList = layers.map((layer) => {
     if (!layer.parseResult?.ok || layer.visible === false) return;
     try {
       const mapGeom = sourceGeomToMapGeom(layer.parseResult.geom, sourceCrs, offset);
-      addGeomToGroup(group, mapGeom, layer.color);
+      return geomBoundsForMapView(mapGeom);
     } catch { /* ignore invalid layer for initial view */ }
+    return null;
   });
-  const bounds = group.getBounds();
-  return bounds.isValid() ? bounds : null;
+  return combineMapBounds(boundsList);
 }
 
 export function Visualizer({ tab, setTab }: VisualizerProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileRef = useRef<L.TileLayer | null>(null);
+  const vectorRendererRef = useRef<L.Canvas | null>(null);
   const layerGroupsRef = useRef<Record<string, L.FeatureGroup>>({});
+  const layerBoundsRef = useRef<Record<string, L.LatLngBounds>>({});
   const measurementGroupRef = useRef<L.FeatureGroup | null>(null);
   const measurementLayersRef = useRef<Record<string, L.Layer>>({});
   const measurementSeqRef = useRef(1);
@@ -322,6 +366,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [coord, setCoord] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
   const [tool, setTool] = useState<Tool>('cursor');
+  const [hintTool, setHintTool] = useState<Tool>('cursor');
+  const [hintChanging, setHintChanging] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementResult[]>([]);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -354,6 +400,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   const layersRef = useRef<Layer[]>([]);
   const toolRef = useRef(tool);
+  const hintToolRef = useRef<Tool>('cursor');
+  const hintTimerRef = useRef<number | null>(null);
 
   const [layers, setLayers] = useState<Layer[]>(() => {
     try {
@@ -382,6 +430,24 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   useEffect(() => { layersRef.current = layers; }, [layers]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
+  const selectTool = useCallback((next: Tool) => {
+    setTool(next);
+    if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
+    if (hintToolRef.current === next) {
+      setHintChanging(false);
+      return;
+    }
+    setHintChanging(true);
+    hintTimerRef.current = window.setTimeout(() => {
+      hintToolRef.current = next;
+      setHintTool(next);
+      setHintChanging(false);
+      hintTimerRef.current = null;
+    }, 90);
+  }, []);
+  useEffect(() => () => {
+    if (hintTimerRef.current !== null) window.clearTimeout(hintTimerRef.current);
+  }, []);
   useEffect(() => {
     try { localStorage.setItem('geotools.visualizerCrs', sourceCrs); } catch { /* ignore */ }
   }, [sourceCrs]);
@@ -434,6 +500,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   /* Init map */
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+    const vectorRenderer = L.canvas({ padding: 0.5 });
     const map = L.map(mapContainerRef.current, {
       center: initialMapBounds?.getCenter() ?? DEFAULT_MAP_CENTER,
       zoom: initialMapBounds ? 16 : DEFAULT_MAP_ZOOM,
@@ -442,19 +509,27 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       zoomSnap: MAP_ZOOM_STEP,
       zoomDelta: MAP_ZOOM_STEP,
       scrollWheelZoom: false,
+      preferCanvas: true,
+      renderer: vectorRenderer,
+      zoomAnimation: true,
+      fadeAnimation: true,
+      markerZoomAnimation: true,
       worldCopyJump: true,
     });
     if (initialMapBounds) {
-      map.fitBounds(initialMapBounds, { padding: [40, 40], maxZoom: 16, animate: false });
+      map.fitBounds(initialMapBounds, { padding: [40, 40], maxZoom: ALL_LAYERS_FIT_MAX_ZOOM, animate: false });
     }
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     (map as any).pm?.setGlobalOptions({ snappable: true, snapDistance: 15 });
     measurementGroupRef.current = L.featureGroup().addTo(map);
+    vectorRendererRef.current = vectorRenderer;
     mapRef.current = map;
     return () => {
       measurementGroupRef.current = null;
       measurementLayersRef.current = {};
       layerGroupsRef.current = {};
+      layerBoundsRef.current = {};
+      vectorRendererRef.current = null;
       lastRenderedRef.current = [];
       map.remove();
       mapRef.current = null;
@@ -607,13 +682,16 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     } else {
       Object.values(layerGroupsRef.current).forEach((lg) => map.removeLayer(lg));
       layerGroupsRef.current = {};
+      layerBoundsRef.current = {};
 
       layers.forEach((p) => {
         if (p.parseResult && p.parseResult.ok && p.visible !== false) {
           const group = L.featureGroup();
           try {
             const mapGeom = sourceGeomToMapGeom(p.parseResult.geom, sourceCrs, numericSourceOffset);
-            addGeomToGroup(group, mapGeom, p.color);
+            const layerBounds = geomBoundsForMapView(mapGeom);
+            if (layerBounds) layerBoundsRef.current[p.id] = layerBounds;
+            addGeomToGroup(group, mapGeom, p.color, vectorRendererRef.current ?? undefined);
             group.eachLayer((l: any) => {
               l.__layerId = p.id;
               l.__locked = !!p.locked;
@@ -663,12 +741,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     const t = setTimeout(() => {
       const map = mapRef.current;
       if (!map) return;
-      const groups = Object.values(layerGroupsRef.current);
-      if (groups.length === 0) return;
-      const all = L.featureGroup(groups);
-      const b = all.getBounds();
-      if (b.isValid()) {
-        map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
+      const b = combineMapBounds(Object.values(layerBoundsRef.current));
+      if (b?.isValid()) {
+        map.fitBounds(b, { padding: [40, 40], maxZoom: ALL_LAYERS_FIT_MAX_ZOOM });
         didInitialFit.current = true;
       }
     }, 300);
@@ -939,7 +1014,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       const finalRay = L.featureGroup([finalLine, finalArrow]);
       clearPreview();
       addMeasurementFromPoints('direction', [start, end], finalRay);
-      setTool('cursor');
+      selectTool('cursor');
     };
 
     const onMouseMove = (event: L.LeafletMouseEvent) => {
@@ -955,7 +1030,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       map.getContainer().classList.remove('direction-tool-active');
       clearPreview();
     };
-  }, [tool, addMeasurementFromPoints]);
+  }, [tool, addMeasurementFromPoints, selectTool]);
 
   /* Geoman create handler */
   const addDrawnLayer = useCallback((geom: Geom, shape?: string) => {
@@ -985,7 +1060,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       if (isMeasurementTool(activeTool)) {
         map.removeLayer(layer);
         addMeasurement(activeTool, layer);
-        setTool('cursor');
+        selectTool('cursor');
         return;
       }
 
@@ -1004,13 +1079,13 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       if (!geom) return;
       map.removeLayer(layer);
       addDrawnLayer(geom, e.shape);
-      setTool('cursor');
+      selectTool('cursor');
     };
     (map as any).on('pm:create', onCreate);
     return () => {
       (map as any).off('pm:create', onCreate);
     };
-  }, [addDrawnLayer, addMeasurement]);
+  }, [addDrawnLayer, addMeasurement, selectTool]);
 
   /* Layer actions — wrapped in useCallback so memoized LayerPanel children
      don't re-render on unrelated state changes (e.g. color-picker drags). */
@@ -1098,21 +1173,23 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     }
   }, [showToast]);
 
-  const zoomTo = (id: string) => {
+  const zoomTo = useCallback((id: string) => {
     const map = mapRef.current;
-    const lg = layerGroupsRef.current[id];
-    if (!map || !lg) return;
-    const b = lg.getBounds();
-    if (b.isValid()) map.fitBounds(b, { padding: [60, 60], maxZoom: 17 });
-  };
+    if (!map) return;
+    const b = layerBoundsRef.current[id];
+    if (b?.isValid()) map.fitBounds(b, { padding: [44, 44], maxZoom: MAP_MAX_ZOOM });
+  }, []);
+
+  const selectLayerAndZoom = useCallback((id: string) => {
+    setSelectedId(id);
+    zoomTo(id);
+  }, [zoomTo]);
 
   const fitAll = () => {
     const map = mapRef.current;
     if (!map) return;
-    const groups = Object.values(layerGroupsRef.current);
-    if (groups.length === 0) return;
-    const b = L.featureGroup(groups).getBounds();
-    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 16 });
+    const b = combineMapBounds(Object.values(layerBoundsRef.current));
+    if (b?.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: ALL_LAYERS_FIT_MAX_ZOOM });
   };
 
   const clearAll = () => {
@@ -1287,19 +1364,19 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                       <Icon name="upload" size={12} /> From file
                     </button>
                     <div className="divider" />
-                    <button onClick={() => { setTool('point'); setAddMenuOpen(false); }}>
+                    <button onClick={() => { selectTool('point'); setAddMenuOpen(false); }}>
                       <Icon name="point" size={12} /> Draw point
                     </button>
-                    <button onClick={() => { setTool('line'); setAddMenuOpen(false); }}>
+                    <button onClick={() => { selectTool('line'); setAddMenuOpen(false); }}>
                       <Icon name="line" size={12} /> Draw line
                     </button>
-                    <button onClick={() => { setTool('polygon'); setAddMenuOpen(false); }}>
+                    <button onClick={() => { selectTool('polygon'); setAddMenuOpen(false); }}>
                       <Icon name="polygon" size={12} /> Draw polygon
                     </button>
-                    <button onClick={() => { setTool('rect'); setAddMenuOpen(false); }}>
+                    <button onClick={() => { selectTool('rect'); setAddMenuOpen(false); }}>
                       <Icon name="rect" size={12} /> Draw rectangle
                     </button>
-                    <button onClick={() => { setTool('circle'); setAddMenuOpen(false); }}>
+                    <button onClick={() => { selectTool('circle'); setAddMenuOpen(false); }}>
                       <Icon name="circle" size={12} /> Draw circle
                     </button>
                   </div>
@@ -1372,6 +1449,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 autoRender={autoRender}
                 collapsed={!!collapsedIds[p.id]}
                 onToggleCollapsed={toggleCollapsed}
+                onTextFocus={selectLayerAndZoom}
               />
             ))}
             <button className="add-panel" onClick={() => addLayer()}>
@@ -1391,30 +1469,30 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
         <div className="map-wrap">
           <div className="map-toolbar">
             <div className="tool-group" aria-label="Edit tools">
-              <button className={`tool-btn ${tool === 'cursor' ? 'active' : ''}`} onClick={() => setTool('cursor')} title="Cursor (select/edit)">
+              <button className={`tool-btn ${tool === 'cursor' ? 'active' : ''}`} onClick={() => selectTool('cursor')} title="Cursor (select/edit)">
                 <Icon name="cursor" size={12} />
                 <span className="tool-btn-label">Cursor</span>
               </button>
             </div>
 
             <div className="tool-group" aria-label="Draw tools">
-              <button className={`tool-btn ${tool === 'point' ? 'active' : ''}`} onClick={() => setTool('point')} title="Draw point">
+              <button className={`tool-btn ${tool === 'point' ? 'active' : ''}`} onClick={() => selectTool('point')} title="Draw point">
                 <Icon name="point" size={12} />
                 <span className="tool-btn-label">Point</span>
               </button>
-              <button className={`tool-btn ${tool === 'line' ? 'active' : ''}`} onClick={() => setTool('line')} title="Draw line">
+              <button className={`tool-btn ${tool === 'line' ? 'active' : ''}`} onClick={() => selectTool('line')} title="Draw line">
                 <Icon name="line" size={12} />
                 <span className="tool-btn-label">Line</span>
               </button>
-              <button className={`tool-btn ${tool === 'polygon' ? 'active' : ''}`} onClick={() => setTool('polygon')} title="Draw polygon">
+              <button className={`tool-btn ${tool === 'polygon' ? 'active' : ''}`} onClick={() => selectTool('polygon')} title="Draw polygon">
                 <Icon name="polygon" size={12} />
                 <span className="tool-btn-label">Polygon</span>
               </button>
-              <button className={`tool-btn ${tool === 'rect' ? 'active' : ''}`} onClick={() => setTool('rect')} title="Draw rectangle">
+              <button className={`tool-btn ${tool === 'rect' ? 'active' : ''}`} onClick={() => selectTool('rect')} title="Draw rectangle">
                 <Icon name="rect" size={12} />
                 <span className="tool-btn-label">Rectangle</span>
               </button>
-              <button className={`tool-btn ${tool === 'circle' ? 'active' : ''}`} onClick={() => setTool('circle')} title="Draw circle">
+              <button className={`tool-btn ${tool === 'circle' ? 'active' : ''}`} onClick={() => selectTool('circle')} title="Draw circle">
                 <Icon name="circle" size={12} />
                 <span className="tool-btn-label">Circle</span>
               </button>
@@ -1423,7 +1501,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
             <div className="tool-group operation-tools" aria-label="Measure tools">
               <button
                 className={`tool-btn ${tool === 'measure-distance' ? 'active' : ''}`}
-                onClick={() => setTool('measure-distance')}
+                onClick={() => selectTool('measure-distance')}
                 title="Measure distance"
               >
                 <Icon name="ruler" size={12} />
@@ -1431,7 +1509,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               </button>
               <button
                 className={`tool-btn ${tool === 'measure-area' ? 'active' : ''}`}
-                onClick={() => setTool('measure-area')}
+                onClick={() => selectTool('measure-area')}
                 title="Measure area"
               >
                 <Icon name="area" size={12} />
@@ -1439,23 +1517,15 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
               </button>
               <button
                 className={`tool-btn ${tool === 'direction' ? 'active' : ''}`}
-                onClick={() => setTool('direction')}
+                onClick={() => selectTool('direction')}
                 title="Draw direction ray"
               >
                 <Icon name="compass" size={12} />
                 <span className="tool-btn-label">Direction</span>
               </button>
             </div>
-            <span className="tool-hint">
-              {tool === 'cursor' && 'Click a geometry to edit vertices. Drag to move.'}
-              {tool === 'point' && 'Click map to place a point'}
-              {tool === 'line' && 'Click to add vertices · double-click to finish'}
-              {tool === 'polygon' && 'Click to add vertices · double-click to finish'}
-              {tool === 'rect' && 'Click + drag to draw a rectangle'}
-              {tool === 'circle' && 'Click center, drag to set radius'}
-              {tool === 'measure-distance' && 'Click line vertices · double-click to finish distance'}
-              {tool === 'measure-area' && 'Click polygon vertices · double-click to finish area'}
-              {tool === 'direction' && 'Click start · move to preview ray · click end'}
+            <span className={`tool-hint ${hintChanging ? 'changing' : ''}`}>
+              {TOOL_HINTS[hintTool]}
             </span>
           </div>
 
@@ -1468,7 +1538,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 selectedId={selectedId}
                 onToggle={toggleVisible}
                 onZoomTo={zoomTo}
-                onSelect={(id) => { setSelectedId(id); setTool('cursor'); }}
+                onSelect={(id) => { setSelectedId(id); selectTool('cursor'); }}
                 onRemove={removeLayer}
                 crsLabel={crsLabel}
               />

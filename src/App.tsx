@@ -8,7 +8,9 @@ import { TWEAKS_DEFAULTS } from './lib/constants';
 function App() {
   const [tab, setTab] = useState<Tab>(() => {
     try {
-      return ((localStorage.getItem('geotools.tab') as Tab) || 'visualizer');
+      const saved = localStorage.getItem('geotools.tab');
+      if (saved === 'converter') return 'crs';
+      return ((saved as Tab) || 'visualizer');
     } catch {
       return 'visualizer';
     }

@@ -2,7 +2,7 @@ import { useContext } from 'react';
 import { Icon } from './Icon';
 import { ThemeCtx, type ThemeMode } from './ThemeCtx';
 
-export type Tab = 'visualizer' | 'converter';
+export type Tab = 'visualizer' | 'format' | 'crs';
 
 interface AppShellProps {
   tab: Tab;
@@ -16,7 +16,9 @@ export function AppShell({ tab, setTab }: AppShellProps) {
   const sub =
     tab === 'visualizer'
       ? 'Layer-based geometry viewer & editor'
-      : 'Transform format & coordinate systems';
+      : tab === 'format'
+        ? 'Transform GeoJSON & WKT'
+        : 'Transform coordinate systems';
 
   return (
     <div className="app-header">
@@ -26,15 +28,33 @@ export function AppShell({ tab, setTab }: AppShellProps) {
           <span>GeoTools</span>
           <span className="brand-sub">{sub}</span>
         </div>
+        <nav className="app-nav" aria-label="Main views">
+          <button
+            type="button"
+            className={`app-nav-item ${tab === 'visualizer' ? 'active' : ''}`}
+            onClick={() => setTab('visualizer')}
+          >
+            <Icon name="globe" size={12} />
+            <span>Visualizer</span>
+          </button>
+          <button
+            type="button"
+            className={`app-nav-item ${tab === 'format' ? 'active' : ''}`}
+            onClick={() => setTab('format')}
+          >
+            <Icon name="file" size={12} />
+            <span>Format</span>
+          </button>
+          <button
+            type="button"
+            className={`app-nav-item ${tab === 'crs' ? 'active' : ''}`}
+            onClick={() => setTab('crs')}
+          >
+            <Icon name="swap" size={12} />
+            <span>Coordinate</span>
+          </button>
+        </nav>
         <div className="header-right">
-          <nav className="app-nav" aria-label="Main views">
-            <button className={`app-nav-item ${tab === 'visualizer' ? 'active' : ''}`} onClick={() => setTab('visualizer')}>
-              Visualizer
-            </button>
-            <button className={`app-nav-item ${tab === 'converter' ? 'active' : ''}`} onClick={() => setTab('converter')}>
-              Converter
-            </button>
-          </nav>
           <a
             className="header-link"
             href={REPO_URL}

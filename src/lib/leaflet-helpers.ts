@@ -5,6 +5,7 @@ export function addGeomToGroup(
   group: L.FeatureGroup,
   geom: Geom,
   color: string,
+  renderer?: L.Renderer,
 ): L.FeatureGroup {
   const pointStyle: L.CircleMarkerOptions = {
     radius: 6,
@@ -13,17 +14,20 @@ export function addGeomToGroup(
     weight: 2,
     opacity: 1,
     fillOpacity: 1,
+    renderer,
   };
-  const lineStyle: L.PathOptions = { color, weight: 3, opacity: 0.95 };
+  const lineStyle: L.PathOptions = { color, weight: 3, opacity: 0.95, renderer };
   const polyStyle: L.PathOptions = {
     color,
     weight: 2,
     opacity: 0.95,
     fillColor: color,
     fillOpacity: 0.18,
+    renderer,
   };
 
-  L.geoJSON(geom as any, {
+  const geoJson = geom as Parameters<typeof L.geoJSON>[0];
+  L.geoJSON(geoJson, {
     pointToLayer: (_feat, latlng) => L.circleMarker(latlng, pointStyle),
     style: (feat) => {
       const t = feat && feat.geometry ? feat.geometry.type : geom.type;

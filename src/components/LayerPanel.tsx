@@ -39,12 +39,13 @@ interface LayerPanelProps {
   onManualRender: (id: string) => void;
   onRecolor: (id: string, color: string) => void;
   onToggleCollapsed: (id: string) => void;
+  onTextFocus?: (id: string) => void;
 }
 
 function LayerPanelInner({
   layer, selected, autoRender, collapsed, palette,
   onSelect, onChange, onRemove, onRename, onClear,
-  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed,
+  onToggleVisible, onToggleLock, onUpload, onManualRender, onRecolor, onToggleCollapsed, onTextFocus,
 }: LayerPanelProps) {
   const [focused, setFocused] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -248,7 +249,11 @@ function LayerPanelInner({
           className={`geom-input ${expanded ? 'expanded' : ''}`}
           value={layer.text}
           onChange={(e) => onChange(layer.id, e.target.value)}
-          onFocus={() => { setFocused(true); onSelect(layer.id); }}
+          onFocus={() => {
+            setFocused(true);
+            if (onTextFocus) onTextFocus(layer.id);
+            else onSelect(layer.id);
+          }}
           onBlur={() => setFocused(false)}
           placeholder={isLocked ? 'Locked — read-only base layer' : `Paste GeoJSON or WKT…\ne.g. POINT (-122.419 37.775)`}
           spellCheck={false}
