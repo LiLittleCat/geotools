@@ -572,7 +572,7 @@ function TargetCard({
           />
           <span>Origin offset</span>
         </label>
-        <button type="button" className="btn icon ghost danger" title="Remove target" onClick={onRemove}>
+        <button type="button" className="btn icon ghost danger crs-target-remove" title="Remove target" onClick={onRemove}>
           <Icon name="trash" size={11} />
         </button>
         {target.origin.enabled && (

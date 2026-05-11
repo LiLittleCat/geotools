@@ -27,6 +27,14 @@ export function AppShell({ tab, setTab }: AppShellProps) {
           <span className="brand-sub">{sub}</span>
         </div>
         <div className="header-right">
+          <nav className="app-nav" aria-label="Main views">
+            <button className={`app-nav-item ${tab === 'visualizer' ? 'active' : ''}`} onClick={() => setTab('visualizer')}>
+              Visualizer
+            </button>
+            <button className={`app-nav-item ${tab === 'converter' ? 'active' : ''}`} onClick={() => setTab('converter')}>
+              Converter
+            </button>
+          </nav>
           <a
             className="header-link"
             href={REPO_URL}
@@ -49,16 +57,6 @@ export function AppShell({ tab, setTab }: AppShellProps) {
               </button>
             ))}
           </div>
-        </div>
-      </div>
-      <div className="header-row tabs-row">
-        <div className="tabs">
-          <button className={`tab ${tab === 'visualizer' ? 'active' : ''}`} onClick={() => setTab('visualizer')}>
-            Visualizer
-          </button>
-          <button className={`tab ${tab === 'converter' ? 'active' : ''}`} onClick={() => setTab('converter')}>
-            Converter
-          </button>
         </div>
       </div>
     </div>

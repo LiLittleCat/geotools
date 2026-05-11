@@ -104,6 +104,8 @@ type MeasurementLayer = L.Layer & {
 };
 
 const MAP_ZOOM_STEP = 0.5;
+const MAP_MAX_ZOOM = 24;
+const TILE_NATIVE_MAX_ZOOM = 20;
 const WHEEL_ZOOM_LOCK_MS = 140;
 const MEASURE_COLOR = '#f97316';
 const EARTH_RADIUS_METERS = 6378137;
@@ -121,6 +123,8 @@ const AREA_UNITS: { id: AreaUnit; label: string }[] = [
 ];
 const DEFAULT_VISUALIZER_CRS = 'EPSG:4326';
 const DEFAULT_VISUALIZER_OFFSET: VisualizerCrsOffset = { enabled: false, x: 0, y: 0 };
+const DEFAULT_MAP_CENTER: L.LatLngExpression = [37.7749, -122.4194];
+const DEFAULT_MAP_ZOOM = 11;
 
 function isMeasurementTool(tool: Tool): tool is MeasurementTool {
   return tool === 'measure-distance' || tool === 'measure-area' || tool === 'direction';
@@ -286,6 +290,23 @@ function nextLayerName(currentName: string, text: string) {
   return extractSingleFeatureName(text) || currentName;
 }
 
+function layerBoundsForMapView(
+  layers: Layer[],
+  sourceCrs: string,
+  offset: ReturnType<typeof numericCoordinateOffset>,
+) {
+  const group = L.featureGroup();
+  layers.forEach((layer) => {
+    if (!layer.parseResult?.ok || layer.visible === false) return;
+    try {
+      const mapGeom = sourceGeomToMapGeom(layer.parseResult.geom, sourceCrs, offset);
+      addGeomToGroup(group, mapGeom, layer.color);
+    } catch { /* ignore invalid layer for initial view */ }
+  });
+  const bounds = group.getBounds();
+  return bounds.isValid() ? bounds : null;
+}
+
 export function Visualizer({ tab, setTab }: VisualizerProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -354,6 +375,10 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     const b = makeLayer(1, { name: 'Route A', text: SAMPLES.line });
     return [a, b];
   });
+  const initialMapBounds = useMemo(
+    () => layerBoundsForMapView(layers, sourceCrs, numericSourceOffset),
+    [layers, numericSourceOffset, sourceCrs],
+  );
 
   useEffect(() => { layersRef.current = layers; }, [layers]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -410,14 +435,18 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
     const map = L.map(mapContainerRef.current, {
-      center: [37.7749, -122.4194],
-      zoom: 11,
+      center: initialMapBounds?.getCenter() ?? DEFAULT_MAP_CENTER,
+      zoom: initialMapBounds ? 16 : DEFAULT_MAP_ZOOM,
       zoomControl: false,
+      maxZoom: MAP_MAX_ZOOM,
       zoomSnap: MAP_ZOOM_STEP,
       zoomDelta: MAP_ZOOM_STEP,
       scrollWheelZoom: false,
       worldCopyJump: true,
     });
+    if (initialMapBounds) {
+      map.fitBounds(initialMapBounds, { padding: [40, 40], maxZoom: 16, animate: false });
+    }
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     (map as any).pm?.setGlobalOptions({ snappable: true, snapDistance: 15 });
     measurementGroupRef.current = L.featureGroup().addTo(map);
@@ -448,11 +477,13 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    map.setMaxZoom(MAP_MAX_ZOOM);
     if (tileRef.current) map.removeLayer(tileRef.current);
     const cfg = TILE_STYLES[tileStyle] || TILE_STYLES['carto-voyager'];
     tileRef.current = L.tileLayer(cfg.url, {
       attribution: cfg.attr,
-      maxZoom: 20,
+      maxZoom: MAP_MAX_ZOOM,
+      maxNativeZoom: TILE_NATIVE_MAX_ZOOM,
       subdomains: 'abcd',
       updateWhenZooming: false,
       updateWhenIdle: true,
@@ -477,7 +508,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       locked = true;
       const direction = wheelEvent.deltaY < 0 ? 1 : -1;
       const point = map.mouseEventToContainerPoint(wheelEvent);
-      map.setZoomAround(point, map.getZoom() + direction * MAP_ZOOM_STEP);
+      const nextZoom = Math.max(map.getMinZoom(), Math.min(MAP_MAX_ZOOM, map.getZoom() + direction * MAP_ZOOM_STEP));
+      map.setZoomAround(point, nextZoom);
       lockTimer = window.setTimeout(() => { locked = false; }, WHEEL_ZOOM_LOCK_MS);
     };
 
@@ -625,7 +657,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
      so the user sees their data on load. After that we never auto-fit — the current zoom
      is preserved across edits, new layers, toggles, etc. Users can press "Fit all". */
-  const didInitialFit = useRef(false);
+  const didInitialFit = useRef(!!initialMapBounds);
   useEffect(() => {
     if (didInitialFit.current) return;
     const t = setTimeout(() => {
@@ -1642,7 +1674,7 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                   <span style={{ color: 'var(--fg-4)', margin: '0 6px' }}>·</span>
                   <span className="k">{coordDisplay.b[0]}</span> {coordDisplay.b[1]}
                   <span style={{ color: 'var(--fg-4)', margin: '0 6px' }}>·</span>
-                  <span className="k">z</span> {coord?.zoom ?? '—'}
+                  <span className="k">Zoom</span> {coord?.zoom ?? '—'}
                 </div>
               )}
             </div>

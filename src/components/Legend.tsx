@@ -3,6 +3,8 @@ import { Icon } from './Icon';
 import type { Layer } from './LayerPanel';
 import { activateLegendLayer } from './legend-helpers';
 
+type LegendRowStyle = CSSProperties & { '--_c': string };
+
 interface LegendProps {
   layers: Layer[];
   selectedId: string | null;
@@ -21,7 +23,7 @@ export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, onRem
     <div className="legend">
       <div className="legend-title">
         <span>Layers · {shown}/{valid.length}</span>
-        <span>{crsLabel}</span>
+        <span className="legend-crs-pill">{crsLabel}</span>
       </div>
       {layers.map((p) => {
         const ok = !!(p.parseResult && p.parseResult.ok);
@@ -30,7 +32,7 @@ export function Legend({ layers, selectedId, onToggle, onZoomTo, onSelect, onRem
           <div
             key={p.id}
             className={`legend-row ${!p.visible ? 'hidden' : ''} ${ok ? 'clickable' : ''} ${p.id === selectedId ? 'selected' : ''}`}
-            style={{ ['--_c' as any]: p.color } as CSSProperties}
+            style={{ '--_c': p.color } as LegendRowStyle}
             onClick={() => {
               if (!ok) return;
               activateLegendLayer(p.id, onSelect, onZoomTo);
