@@ -7,6 +7,7 @@ import { AppShell, type Tab } from './AppShell';
 import { LayerPanel, type Layer } from './LayerPanel';
 import { Legend } from './Legend';
 import { ThemeCtx } from './ThemeCtx';
+import { CrsSelect } from './CrsSelect';
 
 import {
   PALETTE, SAMPLES, TILE_STYLES, TWEAKS_DEFAULTS,
@@ -20,7 +21,14 @@ import {
   type ParseResult,
 } from '../lib/parse';
 import { addGeomToGroup, pointIcon } from '../lib/leaflet-helpers';
-import { projectCoord, utmProjString } from '../lib/proj';
+import { crsShort, isUtmCrs } from '../lib/proj';
+import {
+  isProjectedDisplayCrs,
+  mapCoordToSourceCoord,
+  mapGeomToSourceGeom,
+  numericCoordinateOffset,
+  sourceGeomToMapGeom,
+} from '../lib/crs-transform';
 import {
   buildLayerEditOptions,
   shouldSyncLayerEdit,
@@ -44,6 +52,12 @@ interface MakeLayerOpts {
   color?: string;
   locked?: boolean;
   source?: Layer['source'];
+}
+
+interface VisualizerCrsOffset {
+  enabled: boolean;
+  x: number | string;
+  y: number | string;
 }
 
 type DrawTool = 'cursor' | 'point' | 'line' | 'polygon' | 'rect' | 'circle';
@@ -105,6 +119,8 @@ const AREA_UNITS: { id: AreaUnit; label: string }[] = [
   { id: 'ha', label: 'ha' },
   { id: 'acre', label: 'acre' },
 ];
+const DEFAULT_VISUALIZER_CRS = 'EPSG:4326';
+const DEFAULT_VISUALIZER_OFFSET: VisualizerCrsOffset = { enabled: false, x: 0, y: 0 };
 
 function isMeasurementTool(tool: Tool): tool is MeasurementTool {
   return tool === 'measure-distance' || tool === 'measure-area' || tool === 'direction';
@@ -292,9 +308,28 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   const [exportFormat, setExportFormat] = useState<'GeoJSON' | 'WKT'>('GeoJSON');
   const [wktExportMode, setWktExportMode] = useState<WktExportMode>('collection');
   const [exportCopied, setExportCopied] = useState(false);
-  const [crs] = useState<'WGS84' | 'UTM'>('WGS84');
-  const [utmZone] = useState(10);
-  const [utmHemi] = useState<'N' | 'S'>('N');
+  const [sourceCrs, setSourceCrs] = useState(() => {
+    try {
+      return localStorage.getItem('geotools.visualizerCrs') || DEFAULT_VISUALIZER_CRS;
+    } catch {
+      return DEFAULT_VISUALIZER_CRS;
+    }
+  });
+  const [sourceOffset, setSourceOffset] = useState<VisualizerCrsOffset>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('geotools.visualizerOffset') || 'null');
+      if (saved && typeof saved === 'object') {
+        return {
+          enabled: !!saved.enabled,
+          x: typeof saved.x === 'string' || typeof saved.x === 'number' ? saved.x : 0,
+          y: typeof saved.y === 'string' || typeof saved.y === 'number' ? saved.y : 0,
+        };
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_VISUALIZER_OFFSET;
+  });
+  const numericSourceOffset = useMemo(() => numericCoordinateOffset(sourceOffset), [sourceOffset]);
+  const sourceOffsetKey = `${numericSourceOffset.enabled}:${numericSourceOffset.x}:${numericSourceOffset.y}`;
 
   const layersRef = useRef<Layer[]>([]);
   const toolRef = useRef(tool);
@@ -322,6 +357,12 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
 
   useEffect(() => { layersRef.current = layers; }, [layers]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
+  useEffect(() => {
+    try { localStorage.setItem('geotools.visualizerCrs', sourceCrs); } catch { /* ignore */ }
+  }, [sourceCrs]);
+  useEffect(() => {
+    try { localStorage.setItem('geotools.visualizerOffset', JSON.stringify(sourceOffset)); } catch { /* ignore */ }
+  }, [sourceOffset]);
 
   useEffect(() => {
     const container = mapRef.current?.getContainer();
@@ -344,16 +385,17 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     let geom: Geom;
     if (feats.length === 1) geom = feats[0].geometry;
     else geom = { type: 'GeometryCollection', geometries: feats.map((f) => f.geometry) };
+    const sourceGeom = mapGeomToSourceGeom(geom, sourceCrs, numericSourceOffset);
 
     setLayers((ps) => ps.map((p) => {
       if (p.id !== id) return p;
       if (p.source === 'file') return p;
       const origFormat = p.parseResult && p.parseResult.ok ? p.parseResult.format : 'GeoJSON';
-      const text = origFormat === 'WKT' ? stringifyGeom(geom, 'WKT') : JSON.stringify(geom, null, 2);
-      const parseResult: ParseResult = { ok: true, geom, format: origFormat };
+      const text = origFormat === 'WKT' ? stringifyGeom(sourceGeom, 'WKT') : JSON.stringify(sourceGeom, null, 2);
+      const parseResult: ParseResult = { ok: true, geom: sourceGeom, format: origFormat };
       return { ...p, text, parseResult };
     }));
-  }, []);
+  }, [numericSourceOffset, sourceCrs]);
 
   const handlePmDrag = useCallback((ev: any) => {
     syncDraggedEditMarkers(ev.target);
@@ -483,6 +525,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     visible: boolean;
     locked: boolean;
     name: string;
+    sourceCrs: string;
+    sourceOffsetKey: string;
   }[]>([]);
 
   const applyLayerStyle = (group: L.FeatureGroup, color: string) => {
@@ -517,7 +561,9 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
           && q.parseResult === p.parseResult
           && q.visible === p.visible
           && q.locked === p.locked
-          && q.name === p.name;
+          && q.name === p.name
+          && q.sourceCrs === sourceCrs
+          && q.sourceOffsetKey === sourceOffsetKey;
       });
 
     if (structuralSame) {
@@ -534,7 +580,8 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
         if (p.parseResult && p.parseResult.ok && p.visible !== false) {
           const group = L.featureGroup();
           try {
-            addGeomToGroup(group, p.parseResult.geom, p.color);
+            const mapGeom = sourceGeomToMapGeom(p.parseResult.geom, sourceCrs, numericSourceOffset);
+            addGeomToGroup(group, mapGeom, p.color);
             group.eachLayer((l: any) => {
               l.__layerId = p.id;
               l.__locked = !!p.locked;
@@ -570,8 +617,10 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
       visible: p.visible,
       locked: p.locked,
       name: p.name,
+      sourceCrs,
+      sourceOffsetKey,
     }));
-  }, [layers, handlePmDrag, handlePmMutation]);
+  }, [layers, handlePmDrag, handlePmMutation, numericSourceOffset, sourceCrs, sourceOffsetKey]);
 
   /* One-shot initial fit: fit the map to all rendered layers the FIRST time any exist,
      so the user sees their data on load. After that we never auto-fit — the current zoom
@@ -881,18 +930,19 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
     const idx = layersRef.current.length;
     const used = new Set(layersRef.current.map((l) => l.color));
     const color = PALETTE.find((c) => !used.has(c)) || PALETTE[idx % PALETTE.length];
-    const name = drawnLayerName(idx, geom.type, shape);
-    const text = JSON.stringify(geom, null, 2);
+    const sourceGeom = mapGeomToSourceGeom(geom, sourceCrs, numericSourceOffset);
+    const name = drawnLayerName(idx, sourceGeom.type, shape);
+    const text = JSON.stringify(sourceGeom, null, 2);
     const newLayer: Layer = {
       id: Math.random().toString(36).slice(2, 9),
       name, text, color,
       visible: true, locked: false, source: 'drawn',
-      parseResult: { ok: true, geom, format: 'GeoJSON' },
+      parseResult: { ok: true, geom: sourceGeom, format: 'GeoJSON' },
     };
     setLayers((ps) => [...ps, newLayer]);
     setSelectedId(newLayer.id);
-    showToast(`Created ${geom.type} as new layer`);
-  }, [showToast]);
+    showToast(`Created ${sourceGeom.type} as new layer`);
+  }, [numericSourceOffset, showToast, sourceCrs]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1055,27 +1105,32 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
   /* Derived */
   const renderedCount = layers.filter((p) => p.parseResult && p.parseResult.ok).length;
   const exportableCount = renderedCount;
-  const crsLabel = crs === 'WGS84' ? 'WGS84' : `UTM ${utmZone}${utmHemi}`;
+  const crsLabel = `${crsShort(sourceCrs)}${numericSourceOffset.enabled ? ' offset' : ''}`;
   const exportText = useMemo(() => {
     if (exportFormat === 'GeoJSON') return buildAllLayersGeoJsonExport(layers);
     return buildAllLayersWktExport(layers, wktExportMode);
   }, [exportFormat, layers, wktExportMode]);
   const exportHint = exportFormat === 'GeoJSON'
-    ? 'FeatureCollection export preserves single-feature properties and adds name only when missing.'
+    ? `FeatureCollection export uses ${crsLabel} coordinates and preserves single-feature properties.`
     : wktExportMode === 'collection'
-      ? 'Standard WKT export uses a single GEOMETRYCOLLECTION and drops layer properties.'
-      : 'Layered WKT is a readable non-standard text export and drops layer properties.';
+      ? `Standard WKT export uses ${crsLabel} coordinates in a single GEOMETRYCOLLECTION.`
+      : `Layered WKT export uses ${crsLabel} coordinates.`;
 
   const coordDisplay = useMemo(() => {
     if (!coord) return null;
-    if (crs === 'WGS84') return { a: ['lat', coord.lat.toFixed(5)], b: ['lng', coord.lng.toFixed(5)] };
     try {
-      const [x, y] = projectCoord([coord.lng, coord.lat], utmProjString(utmZone, utmHemi));
-      return { a: ['E', x.toFixed(1) + 'm'], b: ['N', y.toFixed(1) + 'm'] };
+      const [x, y] = mapCoordToSourceCoord([coord.lng, coord.lat], sourceCrs, numericSourceOffset);
+      if (isProjectedDisplayCrs(sourceCrs)) {
+        return {
+          a: [isUtmCrs(sourceCrs) ? 'E' : 'x', `${x.toFixed(1)}m`],
+          b: [isUtmCrs(sourceCrs) ? 'N' : 'y', `${y.toFixed(1)}m`],
+        };
+      }
+      return { a: ['lat', y.toFixed(5)], b: ['lng', x.toFixed(5)] };
     } catch {
       return { a: ['lat', coord.lat.toFixed(5)], b: ['lng', coord.lng.toFixed(5)] };
     }
-  }, [coord, crs, utmZone, utmHemi]);
+  }, [coord, numericSourceOffset, sourceCrs]);
 
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1219,6 +1274,51 @@ export function Visualizer({ tab, setTab }: VisualizerProps) {
                 )}
               </div>
             </div>
+          </div>
+          <div className="side-crs-panel">
+            <div className="side-crs-head">
+              <span>Layer CRS</span>
+              <label className="crs-origin-toggle">
+                <input
+                  type="checkbox"
+                  checked={sourceOffset.enabled}
+                  onChange={(event) => setSourceOffset((current) => ({
+                    ...current,
+                    enabled: event.target.checked,
+                  }))}
+                />
+                <span>Offset</span>
+              </label>
+            </div>
+            <CrsSelect value={sourceCrs} onChange={setSourceCrs} />
+            {sourceOffset.enabled && (
+              <div className="visualizer-offset-grid">
+                <label>
+                  <span>X / Easting</span>
+                  <input
+                    type="number"
+                    value={sourceOffset.x}
+                    onChange={(event) => setSourceOffset((current) => ({
+                      ...current,
+                      x: event.target.value,
+                    }))}
+                    step="0.0001"
+                  />
+                </label>
+                <label>
+                  <span>Y / Northing</span>
+                  <input
+                    type="number"
+                    value={sourceOffset.y}
+                    onChange={(event) => setSourceOffset((current) => ({
+                      ...current,
+                      y: event.target.value,
+                    }))}
+                    step="0.0001"
+                  />
+                </label>
+              </div>
+            )}
           </div>
           <div className="side-scroll">
             {layers.map((p) => (
