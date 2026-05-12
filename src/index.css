@@ -1662,7 +1662,7 @@ textarea.geom-input.converter-textarea {
   transform: translateY(2px);
 }
 .map-inner { position: relative; flex: 1; min-height: 0; }
-#map { position: absolute; inset: 0; background: var(--map-bg); }
+#map { position: absolute; inset: 0; background: var(--map-bg); outline: none; }
 
 .export-drawer {
   flex-shrink: 0;
